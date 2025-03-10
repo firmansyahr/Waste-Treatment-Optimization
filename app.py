@@ -191,7 +191,8 @@ def main():
                 st.write("Alokasi Limbah per Treatment:")
                 for t, value in allocation.items():
                     st.write(f"{t} : {value:.2f} kg")
-                
+                if overflow_value > 0:
+                    st.write(f"Overflow (dialihkan ke treatment alternatif): {overflow_value:.2f} kg")
                 st.write("Total Emisi CO₂:", total_emissions, "satuan")
                 st.write("Total Biaya:", total_cost, "Rupiah")
             else:
