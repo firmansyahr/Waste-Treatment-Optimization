@@ -2,7 +2,7 @@ import streamlit as st
 import pulp
 
 def optimize_treatment(total_waste, total_budget, selected_treatments, treatment_data):
-    # Buat model optimasi (minimize total emisi)
+    # Buat model optimasi (minimize total emisi CO2)
     prob = pulp.LpProblem("Minimize_CO2_Emissions", pulp.LpMinimize)
     
     # Variabel keputusan: jumlah limbah yang dialokasikan untuk tiap treatment
@@ -32,9 +32,9 @@ def optimize_treatment(total_waste, total_budget, selected_treatments, treatment
 
 def main():
     st.title("Waste Treatment Optimization System")
-    st.write("Masukkan data limbah, treatment, dan informasi lainnya.")
+    st.write("Masukkan data limbah, treatment, transportasi, dan informasi lainnya.")
 
-    # --- Bagian Input Data Limbah ---
+    # --- Input Data Limbah ---
     st.header("Input Data Limbah")
     waste_options = [
         "Paper",
@@ -45,7 +45,7 @@ def main():
         "Household Waste"
     ]
     
-    # Inisialisasi session_state untuk menyimpan entri limbah
+    # Inisialisasi session_state untuk data limbah
     if "waste_entries" not in st.session_state:
         st.session_state["waste_entries"] = []
     
@@ -53,7 +53,7 @@ def main():
     with col1:
         selected_waste_type = st.selectbox("Pilih Tipe Limbah", waste_options)
     with col2:
-        waste_weight = st.number_input("Berat Limbah (kg)", min_value=0.0, step=1.0)
+        waste_weight = st.number_input("Berat Limbah (kg)", min_value=0.0, step=1.0, key="waste_weight")
     
     if st.button("Add Waste"):
         st.session_state["waste_entries"].append({
@@ -69,10 +69,9 @@ def main():
     else:
         st.write("Belum ada data limbah yang ditambahkan.")
     
-    # Hitung total berat limbah
     total_waste = sum([entry['weight'] for entry in st.session_state["waste_entries"]])
     
-    # --- Bagian Input Treatment ---
+    # --- Input Treatment ---
     st.header("Input Treatment")
     treatment_options = [
         "Sanitary Landfill",
@@ -85,7 +84,7 @@ def main():
     ]
     selected_treatments = st.multiselect("Pilih Treatment yang Dimiliki", treatment_options)
     
-    # Data contoh untuk tiap treatment
+    # Data contoh untuk tiap treatment (asumsi nilai, silakan sesuaikan)
     treatment_data = {
         "Sanitary Landfill": {"emission": 0.3, "cost": 1000, "capacity": 1000},
         "Incineration": {"emission": 1.0, "cost": 2000, "capacity": 800},
@@ -96,25 +95,44 @@ def main():
         "Reuse": {"emission": 0.05, "cost": 1200, "capacity": 600}
     }
     
-    # --- Input Data Transportasi ---
+    # --- Input Data Transportasi (Opsional) ---
     st.header("Input Data Transportasi (Opsional)")
-    st.write("Jika limbah akan diangkut menggunakan transportasi menuju fasilitas pengolahan limbah, silakan tambahkan data transportasi di bawah ini.")
-    if st.checkbox("Tambahkan data transportasi"):
-        transport_options = [
-            "Heavy-duty truck",
-            "Medium-duty Truck",
-            "Tossa Motor",
-            "Pickup"
-        ]
-        transport_type = st.selectbox("Pilih Jenis Transportasi", transport_options)
-        travel_distance = st.number_input("Travel Distance (Km)", min_value=0.0, step=1.0)
+    st.write("Jika limbah akan diangkut menggunakan transportasi menuju fasilitas pengolahan limbah, tambahkan data transportasi di bawah ini.")
+    
+    # Inisialisasi session_state untuk data transportasi
+    if "transport_entries" not in st.session_state:
+        st.session_state["transport_entries"] = []
+    
+    transport_options = [
+        "Heavy-duty truck",
+        "Medium-duty Truck",
+        "Tossa Motor",
+        "Pickup"
+    ]
+    
+    col3, col4 = st.columns(2)
+    with col3:
+        selected_transport_type = st.selectbox("Pilih Jenis Transportasi", transport_options, key="transport_type")
+    with col4:
+        travel_distance = st.number_input("Travel Distance (Km)", min_value=0.0, step=1.0, key="travel_distance")
+    
+    if st.button("Add Transportation"):
+        st.session_state["transport_entries"].append({
+            "transport_type": selected_transport_type,
+            "travel_distance": travel_distance
+        })
+        st.success(f"Added {selected_transport_type} dengan jarak {travel_distance} Km")
+    
+    if st.session_state["transport_entries"]:
+        st.subheader("Data Transportasi yang Ditambahkan:")
+        for entry in st.session_state["transport_entries"]:
+            st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
     else:
-        transport_type = None
-        travel_distance = None
+        st.write("Belum ada data transportasi yang ditambahkan.")
     
     # --- Input Total Budget ---
     st.header("Input Total Budget")
-    total_budget = st.number_input("Total Budget Yang Dimiliki (dalam Rupiah)", min_value=0.0, step=1.0)
+    total_budget = st.number_input("Total Budget Yang Dimiliki (dalam Rupiah)", min_value=0.0, step=1.0, key="total_budget")
     st.caption("Masukkan total budget perusahaan dalam satuan Rupiah.")
     
     # --- Tombol Submit dan Optimasi ---
@@ -129,9 +147,10 @@ def main():
         
         st.write("Treatment yang Dipilih:", selected_treatments)
         
-        if transport_type and travel_distance is not None:
-            st.write("Jenis Transportasi:", transport_type)
-            st.write("Travel Distance (Km):", travel_distance)
+        if st.session_state["transport_entries"]:
+            st.write("Data Transportasi:")
+            for entry in st.session_state["transport_entries"]:
+                st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
         else:
             st.write("Data Transportasi: Tidak ditambahkan")
         
@@ -147,10 +166,11 @@ def main():
             st.error("Total budget harus lebih dari 0.")
         else:
             # Lakukan optimasi hanya untuk treatment yang dipilih
-            # Filter treatment_data sesuai treatment yang dipilih
             selected_treatment_data = {t: treatment_data[t] for t in selected_treatments}
             
-            status, allocation, total_emissions, total_cost = optimize_treatment(total_waste, total_budget, selected_treatments, treatment_data)
+            status, allocation, total_emissions, total_cost = optimize_treatment(
+                total_waste, total_budget, selected_treatments, treatment_data
+            )
             
             st.subheader("Hasil Optimasi")
             st.write("Status Solusi:", status)
