@@ -3,9 +3,10 @@ import pulp
 
 def optimize_treatment(total_waste, total_budget, selected_treatments, treatment_data):
     """
-    Model optimasi MILP:
-    - x[t]: jumlah limbah yang dialokasikan untuk treatment t, dengan batas atas kapasitas.
-    - x_overflow: jumlah limbah yang dialihkan ke treatment alternatif dengan penalti.
+    Model optimasi MILP dengan slack untuk budget constraint:
+    - x[t]: limbah dialokasikan ke treatment t, dengan batas atas kapasitas.
+    - x_overflow: limbah dialihkan ke treatment alternatif dengan penalti.
+    - slack: slack variable untuk budget constraint (dikenakan penalti besar jika terjadi pelanggaran).
     """
     prob = pulp.LpProblem("Minimize_CO2_Emissions", pulp.LpMinimize)
     
@@ -14,33 +15,38 @@ def optimize_treatment(total_waste, total_budget, selected_treatments, treatment
     for t in selected_treatments:
         x[t] = pulp.LpVariable(f"x_{t}", lowBound=0, upBound=treatment_data[t]['capacity'])
     
-    # Variabel overflow: tidak ada batas atas
+    # Variabel overflow: limbah yang tidak dapat dialokasikan ke treatment utama
     x_overflow = pulp.LpVariable("x_overflow", lowBound=0)
     
-    # Constraint: total limbah harus dialokasikan antara treatment yang dipilih dan overflow
+    # Slack variable untuk budget constraint (agar model tetap feasible)
+    slack = pulp.LpVariable("slack", lowBound=0)
+    
+    # Constraint: total limbah harus dialokasikan ke treatment yang dipilih atau ke overflow
     prob += (pulp.lpSum([x[t] for t in selected_treatments]) + x_overflow == total_waste), "TotalWaste"
     
-    # Parameter penalti (asumsi, sesuaikan dengan data aktual)
-    penalty_cost = 5000     # Biaya per kg untuk overflow (treatment alternatif)
+    # Parameter biaya dan penalti (sesuaikan dengan data aktual)
+    penalty_cost = 5000     # Biaya per kg untuk overflow
     penalty_emission = 5.0  # Emisi per kg untuk overflow
+    big_penalty = 1e6       # Penalti besar untuk setiap unit slack
     
-    # Constraint: Total biaya tidak boleh melebihi budget
-    prob += (pulp.lpSum([treatment_data[t]['cost'] * x[t] for t in selected_treatments]) + penalty_cost * x_overflow 
-             <= total_budget), "BudgetConstraint"
+    # Budget constraint dengan slack
+    prob += (pulp.lpSum([treatment_data[t]['cost'] * x[t] for t in selected_treatments]) 
+             + penalty_cost * x_overflow - slack <= total_budget), "BudgetConstraint"
     
-    # Fungsi objektif: minimisasi total emisi
-    prob += (pulp.lpSum([treatment_data[t]['emission'] * x[t] for t in selected_treatments]) 
-             + penalty_emission * x_overflow), "TotalEmissions"
+    # Fungsi objektif: minimisasi total emisi ditambah penalti untuk slack
+    prob += (pulp.lpSum([treatment_data[t]['emission'] * x[t] for t in selected_treatments])
+             + penalty_emission * x_overflow + big_penalty * slack), "TotalEmissions"
     
     prob.solve()
     
     status = pulp.LpStatus[prob.status]
     allocation = {t: x[t].varValue for t in selected_treatments}
     overflow_value = x_overflow.varValue
+    slack_value = slack.varValue
     total_emissions = pulp.value(prob.objective)
     total_cost = sum(treatment_data[t]['cost'] * allocation[t] for t in selected_treatments) + penalty_cost * overflow_value
     
-    return status, allocation, overflow_value, total_emissions, total_cost
+    return status, allocation, overflow_value, slack_value, total_emissions, total_cost
 
 def main():
     st.title("Waste Treatment Optimization System")
@@ -102,7 +108,7 @@ def main():
     ]
     selected_treatments = st.multiselect("Pilih Treatment yang Dimiliki", treatment_options)
     
-    # Data contoh untuk tiap treatment (sesuaikan dengan data aktual)
+    # Data contoh untuk tiap treatment (sesuaikan nilai dengan data aktual)
     treatment_data = {
         "Sanitary Landfill": {"emission": 0.3, "cost": 1000, "capacity": 1000},
         "Incineration": {"emission": 1.0, "cost": 2000, "capacity": 800},
@@ -191,7 +197,7 @@ def main():
         else:
             selected_treatment_data = {t: treatment_data[t] for t in selected_treatments}
             
-            status, allocation, overflow_value, total_emissions, total_cost = optimize_treatment(
+            status, allocation, overflow_value, slack_value, total_emissions, total_cost = optimize_treatment(
                 total_waste, total_budget, selected_treatments, selected_treatment_data
             )
             
@@ -203,6 +209,8 @@ def main():
                     st.write(f"{t} : {value:.2f} kg")
                 if overflow_value > 0:
                     st.write(f"Overflow (dialihkan ke treatment alternatif): {overflow_value:.2f} kg")
+                if slack_value > 0:
+                    st.write(f"Budget Slack (melampaui budget): {slack_value:.2f}")
                 st.write("Total Emisi CO₂:", total_emissions, "satuan")
                 st.write("Total Biaya:", total_cost, "Rupiah")
             else:
