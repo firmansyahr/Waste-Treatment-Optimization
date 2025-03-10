@@ -13,7 +13,7 @@ def main():
         "Metal Scrap",
         "Household Waste"
     ]
-    waste_type = st.selectbox("Pilih Tipe Limbah", waste_options)
+    waste_type = st.multiselect("Pilih Tipe Limbah", waste_options)
 
     # Pilihan treatment
     treatment_options = [
