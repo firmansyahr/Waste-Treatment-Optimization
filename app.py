@@ -82,7 +82,8 @@ def main():
             with colC:
                 if st.button("Remove", key=f"remove_waste_{idx}"):
                     st.session_state["waste_entries"].pop(idx)
-                    st.experimental_rerun()  # Perbarui tampilan setelah penghapusan
+                    if hasattr(st, "experimental_rerun"):
+                        st.experimental_rerun()
     else:
         st.write("Belum ada data limbah yang ditambahkan.")
     
@@ -148,7 +149,8 @@ def main():
             with colZ:
                 if st.button("Remove", key=f"remove_transport_{idx}"):
                     st.session_state["transport_entries"].pop(idx)
-                    st.experimental_rerun()  # Perbarui tampilan setelah penghapusan
+                    if hasattr(st, "experimental_rerun"):
+                        st.experimental_rerun()
     else:
         st.write("Belum ada data transportasi yang ditambahkan.")
     
