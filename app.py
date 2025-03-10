@@ -2,38 +2,53 @@ import streamlit as st
 import pulp
 
 def optimize_treatment(total_waste, total_budget, selected_treatments, treatment_data):
-    # Buat model optimasi (minimize total emisi CO2)
+    """
+    Model optimasi MILP:
+    - x[t]: jumlah limbah yang dialokasikan untuk treatment t, dengan batas atas kapasitas.
+    - x_overflow: jumlah limbah yang dialihkan ke treatment alternatif dengan penalti,
+      jika total limbah melebihi kapasitas treatment yang dipilih.
+    """
+    # Buat model MILP untuk minimisasi total emisi
     prob = pulp.LpProblem("Minimize_CO2_Emissions", pulp.LpMinimize)
     
-    # Variabel keputusan: jumlah limbah yang dialokasikan untuk tiap treatment
+    # Variabel keputusan untuk tiap treatment
     x = {}
     for t in selected_treatments:
-        # Batas atas adalah kapasitas pengolahan untuk treatment tersebut
         x[t] = pulp.LpVariable(f"x_{t}", lowBound=0, upBound=treatment_data[t]['capacity'])
     
-    # Constraint: Jumlah alokasi harus sama dengan total limbah
-    prob += pulp.lpSum([x[t] for t in selected_treatments]) == total_waste, "TotalWaste"
+    # Variabel overflow: tidak ada batas atas
+    x_overflow = pulp.LpVariable("x_overflow", lowBound=0)
     
-    # Constraint: Total biaya tidak boleh melebihi total budget
-    prob += pulp.lpSum([treatment_data[t]['cost'] * x[t] for t in selected_treatments]) <= total_budget, "BudgetConstraint"
+    # Constraint: total limbah harus dialokasikan antara treatment yang dipilih dan overflow
+    prob += (pulp.lpSum([x[t] for t in selected_treatments]) + x_overflow == total_waste), "TotalWaste"
     
-    # Fungsi objektif: minimalkan total emisi CO2
-    prob += pulp.lpSum([treatment_data[t]['emission'] * x[t] for t in selected_treatments]), "TotalEmissions"
+    # Parameter penalti (nilai asumsi, sesuaikan dengan data aktual)
+    penalty_cost = 5000     # Biaya per kg untuk overflow (treatment alternatif)
+    penalty_emission = 5.0    # Emisi per kg untuk overflow
+    
+    # Constraint: Total biaya tidak boleh melebihi budget
+    prob += (pulp.lpSum([treatment_data[t]['cost'] * x[t] for t in selected_treatments]) + penalty_cost * x_overflow 
+             <= total_budget), "BudgetConstraint"
+    
+    # Fungsi objektif: minimisasi total emisi
+    prob += (pulp.lpSum([treatment_data[t]['emission'] * x[t] for t in selected_treatments]) 
+             + penalty_emission * x_overflow), "TotalEmissions"
     
     # Lakukan optimasi
     prob.solve()
     
     status = pulp.LpStatus[prob.status]
     allocation = {t: x[t].varValue for t in selected_treatments}
+    overflow_value = x_overflow.varValue
     total_emissions = pulp.value(prob.objective)
-    total_cost = sum(treatment_data[t]['cost'] * allocation[t] for t in selected_treatments)
+    total_cost = sum(treatment_data[t]['cost'] * allocation[t] for t in selected_treatments) + penalty_cost * overflow_value
     
-    return status, allocation, total_emissions, total_cost
+    return status, allocation, overflow_value, total_emissions, total_cost
 
 def main():
     st.title("Waste Treatment Optimization System")
     st.write("Masukkan data limbah, treatment, transportasi, dan informasi lainnya.")
-
+    
     # --- Input Data Limbah ---
     st.header("Input Data Limbah")
     waste_options = [
@@ -45,7 +60,6 @@ def main():
         "Household Waste"
     ]
     
-    # Inisialisasi session_state untuk data limbah
     if "waste_entries" not in st.session_state:
         st.session_state["waste_entries"] = []
     
@@ -84,7 +98,7 @@ def main():
     ]
     selected_treatments = st.multiselect("Pilih Treatment yang Dimiliki", treatment_options)
     
-    # Data contoh untuk tiap treatment (asumsi nilai, silakan sesuaikan)
+    # Data contoh untuk tiap treatment (sesuaikan nilai sesuai data aktual)
     treatment_data = {
         "Sanitary Landfill": {"emission": 0.3, "cost": 1000, "capacity": 1000},
         "Incineration": {"emission": 1.0, "cost": 2000, "capacity": 800},
@@ -99,7 +113,6 @@ def main():
     st.header("Input Data Transportasi (Opsional)")
     st.write("Jika limbah akan diangkut menggunakan transportasi menuju fasilitas pengolahan limbah, tambahkan data transportasi di bawah ini.")
     
-    # Inisialisasi session_state untuk data transportasi
     if "transport_entries" not in st.session_state:
         st.session_state["transport_entries"] = []
     
@@ -135,7 +148,7 @@ def main():
     total_budget = st.number_input("Total Budget Yang Dimiliki (dalam Rupiah)", min_value=0.0, step=1.0, key="total_budget")
     st.caption("Masukkan total budget perusahaan dalam satuan Rupiah.")
     
-    # --- Tombol Submit dan Optimasi ---
+    # --- Submit dan Optimasi ---
     if st.button("Submit dan Optimasi"):
         st.subheader("Data yang Dimasukkan:")
         if st.session_state["waste_entries"]:
@@ -168,8 +181,8 @@ def main():
             # Lakukan optimasi hanya untuk treatment yang dipilih
             selected_treatment_data = {t: treatment_data[t] for t in selected_treatments}
             
-            status, allocation, total_emissions, total_cost = optimize_treatment(
-                total_waste, total_budget, selected_treatments, treatment_data
+            status, allocation, overflow_value, total_emissions, total_cost = optimize_treatment(
+                total_waste, total_budget, selected_treatments, selected_treatment_data
             )
             
             st.subheader("Hasil Optimasi")
@@ -178,6 +191,8 @@ def main():
                 st.write("Alokasi Limbah per Treatment:")
                 for t, value in allocation.items():
                     st.write(f"{t} : {value:.2f} kg")
+                if overflow_value > 0:
+                    st.write(f"Overflow (dialihkan ke treatment alternatif): {overflow_value:.2f} kg")
                 st.write("Total Emisi CO₂:", total_emissions, "satuan")
                 st.write("Total Biaya:", total_cost, "Rupiah")
             else:
