@@ -73,7 +73,6 @@ def main():
         })
         st.success(f"Added {selected_waste_type} dengan berat {waste_weight} kg")
     
-    # Tampilkan data limbah yang ditambahkan dengan opsi untuk menghapus entri
     st.subheader("Data Limbah yang Ditambahkan:")
     if st.session_state["waste_entries"]:
         for idx, entry in enumerate(st.session_state["waste_entries"]):
@@ -140,10 +139,16 @@ def main():
         })
         st.success(f"Added {selected_transport_type} dengan jarak {travel_distance} Km")
     
+    st.subheader("Data Transportasi yang Ditambahkan:")
     if st.session_state["transport_entries"]:
-        st.subheader("Data Transportasi yang Ditambahkan:")
-        for entry in st.session_state["transport_entries"]:
-            st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
+        for idx, entry in enumerate(st.session_state["transport_entries"]):
+            colX, colY, colZ = st.columns([3, 2, 1])
+            with colX:
+                st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
+            with colZ:
+                if st.button("Remove", key=f"remove_transport_{idx}"):
+                    st.session_state["transport_entries"].pop(idx)
+                    st.experimental_rerun()  # Perbarui tampilan setelah penghapusan
     else:
         st.write("Belum ada data transportasi yang ditambahkan.")
     
