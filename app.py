@@ -222,6 +222,7 @@ def main():
             "Type of Waste": selected_waste_type,
             "Amount": amount,
             "Unit": selected_unit,
+            # Pastikan Allowed Treatments selalu disimpan sebagai string
             "Allowed Treatments": ", ".join(allowed_treatments.get(waste_category, {}).get(selected_waste_type, []))
         }
         st.session_state.waste_data.append(new_waste)
@@ -230,6 +231,9 @@ def main():
     if st.session_state.waste_data:
         st.subheader("Daftar Limbah yang Telah Ditambahkan")
         df = pd.DataFrame(st.session_state.waste_data)
+        # Pastikan kolom "Allowed Treatments" selalu berupa string
+        if "Allowed Treatments" in df.columns:
+            df["Allowed Treatments"] = df["Allowed Treatments"].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
         df_style = df.style.set_properties(subset=["Allowed Treatments"], **{"width": "30%"})
         st.dataframe(df_style, use_container_width=True)
 
