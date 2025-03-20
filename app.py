@@ -45,11 +45,10 @@ def main():
 
     # --- STEP 1: Input Data Limbah ---
     st.header("Step 1: Input Data Limbah")
-    
-    # Menggunakan st.form untuk mengelompokkan input dalam satu form
+
     with st.form(key="waste_form"):
-        # Membuat 5 kolom: Category, Type of Waste, Treatment, Amount of Waste, Unit
-        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+        # Membuat 4 kolom: Category, Type of Waste, Amount, Unit
+        col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
 
         with col1:
             waste_category = st.selectbox("Category", ["Non-Hazardous Waste", "Hazardous Waste"])
@@ -72,15 +71,15 @@ def main():
 
         # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
         treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
+        # Opsional: Tampilkan info Allowed Treatments di form
+        st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
 
         with col3:
-            selected_treatment = st.selectbox("Treatment", treatments)
-
-        with col4:
             amount = st.number_input("Amount of Waste", min_value=0.0, step=0.1, format="%.2f")
 
-        with col5:
-            selected_unit = st.selectbox("Unit", ["g", "Kg", "Ton"])
+        with col4:
+            # Menjadikan "Kg" sebagai pilihan utama (default)
+            selected_unit = st.selectbox("Unit", ["Kg", "g", "Ton"], index=0)
 
         # Tombol untuk menambahkan waste ke dalam session state
         add_waste = st.form_submit_button("Add Waste")
@@ -90,9 +89,10 @@ def main():
         new_waste = {
             "Category": waste_category,
             "Type of Waste": selected_waste_type,
-            "Treatment": selected_treatment,
             "Amount": amount,
-            "Unit": selected_unit
+            "Unit": selected_unit,
+            # Simpan Allowed Treatments agar terlihat di tabel
+            "Allowed Treatments": ", ".join(treatments) if treatments else "-"
         }
         st.session_state.waste_data.append(new_waste)
         st.success("Data limbah berhasil ditambahkan!")
