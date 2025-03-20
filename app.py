@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 # Dictionary aturan treatment berdasarkan kategori dan tipe limbah
 allowed_treatments = {
@@ -73,7 +74,6 @@ def main():
 
         # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
         treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
-        
 
         with col3:
             amount = st.number_input("Amount of Waste", min_value=0.0, step=0.1, format="%.2f")
@@ -97,7 +97,13 @@ def main():
 
     if st.session_state.waste_data:
         st.subheader("Daftar Limbah yang Telah Ditambahkan")
-        st.table(st.session_state.waste_data)
+
+        # Tampilkan data limbah menggunakan st.dataframe agar bisa di-styling
+        df = pd.DataFrame(st.session_state.waste_data)
+        # Terapkan styling: kolom "Allowed Treatments" max 30% (approx)
+        df_style = df.style.set_properties(subset=["Allowed Treatments"], **{"width": "30%"})
+
+        st.dataframe(df_style, use_container_width=True)
     
     # --- STEP 2: Input Metrik Lainnya ---
     st.header("Step 2: Input Metrik Lainnya")
@@ -125,9 +131,11 @@ def main():
     third_party_options = None
     if include_third_party:
         st.subheader("Input Lokasi Third Party")
-        col_tp = st.columns(2)
-        third_party_lat = col_tp[0].number_input("Third Party Latitude", format="%.6f", key="tp_lat")
-        third_party_long = col_tp[1].number_input("Third Party Longitude", format="%.6f", key="tp_long")
+        # Ubah menjadi 3 kolom, misalnya: Name, Latitude, Longitude
+        col_tp = st.columns(3)
+        tp_name = col_tp[0].text_input("Third Party Name", key="tp_name")
+        third_party_lat = col_tp[1].number_input("Latitude", format="%.6f", key="tp_lat")
+        third_party_long = col_tp[2].number_input("Longitude", format="%.6f", key="tp_long")
         
         st.subheader("Non-Hazardous Waste Options")
         non_hazardous_options = [
@@ -158,6 +166,7 @@ def main():
                 )
         
         third_party_options = {
+            "Name": tp_name,
             "Lokasi": {"Latitude": third_party_lat, "Longitude": third_party_long},
             "Non-Hazardous Waste": third_party_non_hazardous,
             "Hazardous Waste": third_party_hazardous
@@ -166,13 +175,10 @@ def main():
     # --- Tombol Optimization ---
     if st.button("Optimization"):
         st.subheader("Input yang Diterima")
-        st.write("**Waste Data:**")
-        st.write(st.session_state.get("waste_data", "Tidak ada data limbah"))
-        st.write("**Metrik:**")
-        st.write(st.session_state.get("metrics", "Tidak ada data metrik"))
+        st.write("**Waste Data:**", st.session_state.get("waste_data", "Tidak ada data limbah"))
+        st.write("**Metrik:**", st.session_state.get("metrics", "Tidak ada data metrik"))
         if include_third_party:
-            st.write("**Third Party Options:**")
-            st.write(third_party_options)
+            st.write("**Third Party Options:**", third_party_options)
         else:
             st.write("**Third Party Options:** Tidak ada")
         
