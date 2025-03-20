@@ -1,11 +1,32 @@
 import streamlit as st
 
-def run_optimization(waste_data, metrics, third_party_options):
-    """
-    Fungsi dummy untuk optimisasi.
-    Di sini Anda bisa mengintegrasikan model optimisasi, misalnya menggunakan library PuLP atau lainnya.
-    """
-    # Contoh: menampilkan input yang diterima dan menghasilkan hasil dummy
+# Dictionary aturan treatment berdasarkan kategori dan tipe limbah
+allowed_treatments = {
+    "Non-Hazardous Waste": {
+        "Paper": ["Sanitary Landfill", "Incineration", "Recycle", "Open Burning", "Open Dump", "Unsanitary Landfill"],
+        "Cardboard": ["Sanitary Landfill", "Incineration", "Unsanitary Landfill", "Open Dump", "Open Burning", "Recycle"],
+        "Plastic": ["Incineration", "Sanitary Landfill", "Open Burning", "Open Dump", "Unsanitary Landfill", "Recycle"],
+        "Glass": ["Incineration", "Sanitary Landfill", "Open Burning", "Open Dump", "Unsanitary Landfill", "Recycle"],
+        "Metal Scrap": ["Sanitary Landfill", "Incineration", "Recycle"],
+        "Household Waste": ["Incineration", "Sanitary Landfill", "Unsanitary Landfill", "Open Burning", "Open Dump"],
+        "Wood": ["Sanitary Landfill", "Incineration", "Open Burning", "Open Dump", "Unsanitary Landfill", "Energy Recovery", "Recycle"],
+        "Cement": ["Sanitary Landfill", "Recycle", "Incineration"],
+        "Concrete": ["Sanitary Landfill", "Recycle"],
+        "Wool": ["Sanitary Landfill", "Recycle"],
+        "Biowaste": ["Open Dump", "Industrial Composting", "Anaerobic Digestion", "Incineration"],
+        "Textile": ["Incineration", "Unsanitary Landfill"]
+    },
+    "Hazardous Waste": {
+        "Gypsump Plasterboard": ["Recycle", "Sanitary Landfill"],
+        "Sludge": ["Sanitary Landfill", "Incineration", "Energy Recovery"],
+        "Paint": ["Sanitary Landfill", "Incineration", "Energy Recovery"],
+        "Electronic Waste": ["Open Burning", "Sanitary Landfill", "Unsanitary Landfill", "Recycle"],
+        "Other Hazardous Waste": ["Incineration", "Energy Recovery", "Sanitary Landfill"]
+    }
+}
+
+# Fungsi dummy optimisasi (silakan ganti dengan model optimisasi yang diinginkan)
+def run_optimization(waste_data, metrics):
     result = {
         "status": "Optimal",
         "total_cost": 12345.67,
@@ -16,24 +37,41 @@ def run_optimization(waste_data, metrics, third_party_options):
 def main():
     st.title("Waste Treatment Optimization")
     
-    # --- STEP 1: Input Data Limbah ---
-    st.header("Step 1: Input Data Limbah")
-    with st.form(key='waste_form'):
-        waste_name = st.text_input("Nama Limbah")
-        waste_type = st.selectbox("Tipe Limbah", ["Non-Hazardous Waste", "Hazardous Waste"])
-        waste_weight = st.number_input("Berat", min_value=0.0, format="%.2f")
-        waste_uom = st.text_input("UoM")
-        add_waste = st.form_submit_button("Add Waste")
-    
+    # Inisialisasi session state untuk menyimpan data
     if "waste_data" not in st.session_state:
         st.session_state.waste_data = []
+    if "metrics" not in st.session_state:
+        st.session_state.metrics = {}
 
+    # --- STEP 1: Input Data Limbah ---
+    st.header("Step 1: Input Data Limbah")
+    
+    with st.form(key='waste_form'):
+        waste_category = st.selectbox("Category", ["Non-Hazardous Waste", "Hazardous Waste"])
+        # Tampilkan opsi type berdasarkan kategori
+        if waste_category == "Non-Hazardous Waste":
+            waste_types = ["Paper", "Cardboard", "Plastic", "Glass", "Metal Scrap", 
+                           "Household Waste", "Wood", "Cement", "Concrete", "Wool", 
+                           "Biowaste", "Textile"]
+        else:
+            waste_types = ["Gypsump Plasterboard", "Sludge", "Paint", "Electronic Waste", "Other Hazardous Waste"]
+        waste_type = st.selectbox("Type of Waste", waste_types)
+        
+        # Tampilkan aturan treatment yang berlaku untuk kombinasi kategori dan tipe limbah
+        treatments = allowed_treatments.get(waste_category, {}).get(waste_type, [])
+        st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
+        
+        waste_weight = st.number_input("Berat", min_value=0.0, format="%.2f")
+        waste_uom = st.text_input("UoM", value="kg")
+        add_waste = st.form_submit_button("Add Waste")
+    
     if add_waste:
         new_waste = {
-            "Nama Limbah": waste_name,
-            "Tipe Limbah": waste_type,
+            "Category": waste_category,
+            "Type of Waste": waste_type,
             "Berat": waste_weight,
-            "UoM": waste_uom
+            "UoM": waste_uom,
+            "Allowed Treatments": treatments
         }
         st.session_state.waste_data.append(new_waste)
         st.success("Data limbah berhasil ditambahkan!")
@@ -57,37 +95,10 @@ def main():
         }
         st.success("Data metrik berhasil ditambahkan!")
     
-    if "metrics" in st.session_state:
+    if st.session_state.metrics:
         st.subheader("Metrik")
         st.write(st.session_state.metrics)
     
-    # --- STEP 3: Optional Third Party Pengelola Limbah ---
-    st.header("Step 3: Third Party Pengelola Limbah (Opsional)")
-    include_third_party = st.checkbox("Include Third Party Waste Treatment Options")
-    
-    third_party_options = {}
-    if include_third_party:
-        st.subheader("Non-Hazardous Waste Options")
-        third_party_options["Non-Hazardous Waste"] = {}
-        non_hazardous_options = [
-            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning", 
-            "Open Dump", "Unsanitary Landfill", "Energy Recovery", 
-            "Industrial Composting", "Anaerobic Digestion"
-        ]
-        for option in non_hazardous_options:
-            capacity = st.number_input(f"{option} (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"nh_{option}")
-            third_party_options["Non-Hazardous Waste"][option] = capacity
-        
-        st.subheader("Hazardous Waste Options")
-        third_party_options["Hazardous Waste"] = {}
-        hazardous_options = [
-            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning", 
-            "Open Dump", "Unsanitary Landfill", "Energy Recovery"
-        ]
-        for option in hazardous_options:
-            capacity = st.number_input(f"{option} (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"h_{option}")
-            third_party_options["Hazardous Waste"][option] = capacity
-
     # --- Tombol Optimization ---
     if st.button("Optimization"):
         st.subheader("Input yang Diterima")
@@ -95,17 +106,11 @@ def main():
         st.write(st.session_state.get("waste_data", "Tidak ada data limbah"))
         st.write("**Metrik:**")
         st.write(st.session_state.get("metrics", "Tidak ada data metrik"))
-        if include_third_party:
-            st.write("**Third Party Options:**")
-            st.write(third_party_options)
-        else:
-            st.write("Tidak ada opsi third party yang dipilih.")
         
         # Panggil fungsi optimisasi
         result = run_optimization(
             st.session_state.get("waste_data", []),
-            st.session_state.get("metrics", {}),
-            third_party_options if include_third_party else None
+            st.session_state.get("metrics", {})
         )
         
         st.subheader("Hasil Optimisasi")
