@@ -1,220 +1,115 @@
 import streamlit as st
-import pulp
 
-def optimize_treatment(total_waste, total_budget, selected_treatments, treatment_data):
+def run_optimization(waste_data, metrics, third_party_options):
     """
-    Model optimasi MILP dengan slack untuk budget constraint:
-    - x[t]: limbah dialokasikan ke treatment t, dengan batas atas kapasitas.
-    - x_overflow: limbah dialihkan ke treatment alternatif dengan penalti.
-    - slack: slack variable untuk budget constraint (dikenakan penalti besar jika terjadi pelanggaran).
+    Fungsi dummy untuk optimisasi.
+    Di sini Anda bisa mengintegrasikan model optimisasi, misalnya menggunakan library PuLP atau lainnya.
     """
-    prob = pulp.LpProblem("Minimize_CO2_Emissions", pulp.LpMinimize)
-    
-    # Variabel keputusan untuk tiap treatment
-    x = {}
-    for t in selected_treatments:
-        x[t] = pulp.LpVariable(f"x_{t}", lowBound=0, upBound=treatment_data[t]['capacity'])
-    
-    # Variabel overflow: limbah yang tidak dapat dialokasikan ke treatment utama
-    x_overflow = pulp.LpVariable("x_overflow", lowBound=0)
-    
-    # Slack variable untuk budget constraint (agar model tetap feasible)
-    slack = pulp.LpVariable("slack", lowBound=0)
-    
-    # Constraint: total limbah harus dialokasikan ke treatment yang dipilih atau ke overflow
-    prob += (pulp.lpSum([x[t] for t in selected_treatments]) + x_overflow == total_waste), "TotalWaste"
-    
-    # Parameter biaya dan penalti (sesuaikan dengan data aktual)
-    penalty_cost = 5000     # Biaya per kg untuk overflow
-    penalty_emission = 5.0  # Emisi per kg untuk overflow
-    big_penalty = 1e6       # Penalti besar untuk setiap unit slack
-    
-    # Budget constraint dengan slack
-    prob += (pulp.lpSum([treatment_data[t]['cost'] * x[t] for t in selected_treatments]) 
-             + penalty_cost * x_overflow - slack <= total_budget), "BudgetConstraint"
-    
-    # Fungsi objektif: minimisasi total emisi ditambah penalti untuk slack
-    prob += (pulp.lpSum([treatment_data[t]['emission'] * x[t] for t in selected_treatments])
-             + penalty_emission * x_overflow + big_penalty * slack), "TotalEmissions"
-    
-    prob.solve()
-    
-    status = pulp.LpStatus[prob.status]
-    allocation = {t: x[t].varValue for t in selected_treatments}
-    overflow_value = x_overflow.varValue
-    slack_value = slack.varValue
-    total_emissions = pulp.value(prob.objective)
-    total_cost = sum(treatment_data[t]['cost'] * allocation[t] for t in selected_treatments) + penalty_cost * overflow_value
-    
-    return status, allocation, overflow_value, slack_value, total_emissions, total_cost
+    # Contoh: menampilkan input yang diterima dan menghasilkan hasil dummy
+    result = {
+        "status": "Optimal",
+        "total_cost": 12345.67,
+        "details": "Hasil optimisasi dummy berdasarkan input yang diberikan."
+    }
+    return result
 
 def main():
-    st.title("Waste Treatment Optimization System")
-    st.write("Masukkan data limbah, treatment, transportasi, dan informasi lainnya.")
+    st.title("Waste Treatment Optimization")
     
-    # --- Input Data Limbah ---
-    st.header("Input Data Limbah")
-    waste_options = [
-        "Paper",
-        "Cardboard",
-        "Plastic",
-        "Glass",
-        "Metal Scrap",
-        "Household Waste"
-    ]
+    # --- STEP 1: Input Data Limbah ---
+    st.header("Step 1: Input Data Limbah")
+    with st.form(key='waste_form'):
+        waste_name = st.text_input("Nama Limbah")
+        waste_type = st.selectbox("Tipe Limbah", ["Non-Hazardous Waste", "Hazardous Waste"])
+        waste_weight = st.number_input("Berat", min_value=0.0, format="%.2f")
+        waste_uom = st.text_input("UoM")
+        add_waste = st.form_submit_button("Add Waste")
     
-    if "waste_entries" not in st.session_state:
-        st.session_state["waste_entries"] = []
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_waste_type = st.selectbox("Pilih Tipe Limbah", waste_options)
-    with col2:
-        waste_weight = st.number_input("Berat Limbah (kg)", min_value=0.0, step=1.0, key="waste_weight")
-    
-    if st.button("Add Waste"):
-        st.session_state["waste_entries"].append({
-            "waste_type": selected_waste_type, 
-            "weight": waste_weight
-        })
-        st.success(f"Added {selected_waste_type} dengan berat {waste_weight} kg")
-    
-    st.subheader("Data Limbah yang Ditambahkan:")
-    if st.session_state["waste_entries"]:
-        for idx, entry in enumerate(st.session_state["waste_entries"]):
-            colA, colB, colC = st.columns([3, 2, 1])
-            with colA:
-                st.write(f"{entry['waste_type']} : {entry['weight']} kg")
-            with colC:
-                if st.button("Remove", key=f"remove_waste_{idx}"):
-                    st.session_state["waste_entries"].pop(idx)
-                    if hasattr(st, "experimental_rerun"):
-                        st.experimental_rerun()
-    else:
-        st.write("Belum ada data limbah yang ditambahkan.")
-    
-    total_waste = sum([entry['weight'] for entry in st.session_state["waste_entries"]])
-    
-    # --- Input Treatment ---
-    st.header("Input Treatment")
-    treatment_options = [
-        "Sanitary Landfill",
-        "Incineration",
-        "Unsanitary Landfill",
-        "Open Burning",
-        "Open Dump",
-        "Recycle",
-        "Reuse"
-    ]
-    selected_treatments = st.multiselect("Pilih Treatment yang Dimiliki", treatment_options)
-    
-    # Data contoh untuk tiap treatment (sesuaikan nilai dengan data aktual)
-    treatment_data = {
-        "Sanitary Landfill": {"emission": 0.3, "cost": 1000, "capacity": 1000},
-        "Incineration": {"emission": 1.0, "cost": 2000, "capacity": 800},
-        "Unsanitary Landfill": {"emission": 0.5, "cost": 500, "capacity": 1500},
-        "Open Burning": {"emission": 2.0, "cost": 300, "capacity": 700},
-        "Open Dump": {"emission": 0.4, "cost": 200, "capacity": 2000},
-        "Recycle": {"emission": 0.1, "cost": 1500, "capacity": 500},
-        "Reuse": {"emission": 0.05, "cost": 1200, "capacity": 600}
-    }
-    
-    # --- Input Data Transportasi (Opsional) ---
-    st.header("Input Data Transportasi (Opsional)")
-    st.write("Jika limbah akan diangkut menggunakan transportasi menuju fasilitas pengolahan limbah, tambahkan data transportasi di bawah ini.")
-    
-    if "transport_entries" not in st.session_state:
-        st.session_state["transport_entries"] = []
-    
-    transport_options = [
-        "Heavy-duty truck",
-        "Medium-duty Truck",
-        "Tossa Motor",
-        "Pickup"
-    ]
-    
-    col3, col4 = st.columns(2)
-    with col3:
-        selected_transport_type = st.selectbox("Pilih Jenis Transportasi", transport_options, key="transport_type")
-    with col4:
-        travel_distance = st.number_input("Travel Distance (Km)", min_value=0.0, step=1.0, key="travel_distance")
-    
-    if st.button("Add Transportation"):
-        st.session_state["transport_entries"].append({
-            "transport_type": selected_transport_type,
-            "travel_distance": travel_distance
-        })
-        st.success(f"Added {selected_transport_type} dengan jarak {travel_distance} Km")
-    
-    st.subheader("Data Transportasi yang Ditambahkan:")
-    if st.session_state["transport_entries"]:
-        for idx, entry in enumerate(st.session_state["transport_entries"]):
-            colX, colY, colZ = st.columns([3, 2, 1])
-            with colX:
-                st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
-            with colZ:
-                if st.button("Remove", key=f"remove_transport_{idx}"):
-                    st.session_state["transport_entries"].pop(idx)
-                    if hasattr(st, "experimental_rerun"):
-                        st.experimental_rerun()
-    else:
-        st.write("Belum ada data transportasi yang ditambahkan.")
-    
-    # --- Input Total Budget ---
-    st.header("Input Total Budget")
-    total_budget = st.number_input("Total Budget Yang Dimiliki (dalam Rupiah)", min_value=0.0, step=1.0, key="total_budget")
-    st.caption("Masukkan total budget perusahaan dalam satuan Rupiah.")
-    
-    # --- Submit dan Optimasi ---
-    if st.button("Submit dan Optimasi"):
-        st.subheader("Data yang Dimasukkan:")
-        if st.session_state["waste_entries"]:
-            st.write("Data Limbah:")
-            for entry in st.session_state["waste_entries"]:
-                st.write(f"{entry['waste_type']} : {entry['weight']} kg")
-        else:
-            st.write("Tidak ada data limbah yang ditambahkan.")
-        
-        st.write("Treatment yang Dipilih:", selected_treatments)
-        
-        if st.session_state["transport_entries"]:
-            st.write("Data Transportasi:")
-            for entry in st.session_state["transport_entries"]:
-                st.write(f"{entry['transport_type']} : {entry['travel_distance']} Km")
-        else:
-            st.write("Data Transportasi: Tidak ditambahkan")
-        
-        st.write("Total Budget (Rupiah):", total_budget)
-        st.write("Total Limbah (kg):", total_waste)
-        
-        # Validasi input untuk optimasi
-        if total_waste <= 0:
-            st.error("Total berat limbah harus lebih dari 0.")
-        elif not selected_treatments:
-            st.error("Pilih minimal 1 treatment untuk optimasi.")
-        elif total_budget <= 0:
-            st.error("Total budget harus lebih dari 0.")
-        else:
-            selected_treatment_data = {t: treatment_data[t] for t in selected_treatments}
-            
-            status, allocation, overflow_value, slack_value, total_emissions, total_cost = optimize_treatment(
-                total_waste, total_budget, selected_treatments, selected_treatment_data
-            )
-            
-            st.subheader("Hasil Optimasi")
-            st.write("Status Solusi:", status)
-            if status == "Optimal":
-                st.write("Alokasi Limbah per Treatment:")
-                for t, value in allocation.items():
-                    st.write(f"{t} : {value:.2f} kg")
-                if overflow_value > 0:
-                    st.write(f"Overflow (dialihkan ke treatment alternatif): {overflow_value:.2f} kg")
-                if slack_value > 0:
-                    st.write(f"Budget Slack (melampaui budget): {slack_value:.2f}")
-                st.write("Total Emisi CO₂:", total_emissions, "satuan")
-                st.write("Total Biaya:", total_cost, "Rupiah")
-            else:
-                st.error("Solusi optimal tidak ditemukan. Periksa kembali input dan constraint yang diberikan.")
+    if "waste_data" not in st.session_state:
+        st.session_state.waste_data = []
 
-if __name__ == "__main__":
+    if add_waste:
+        new_waste = {
+            "Nama Limbah": waste_name,
+            "Tipe Limbah": waste_type,
+            "Berat": waste_weight,
+            "UoM": waste_uom
+        }
+        st.session_state.waste_data.append(new_waste)
+        st.success("Data limbah berhasil ditambahkan!")
+    
+    if st.session_state.waste_data:
+        st.subheader("Daftar Limbah")
+        st.write(st.session_state.waste_data)
+    
+    # --- STEP 2: Input Metrik Lainnya ---
+    st.header("Step 2: Input Metrik Lainnya")
+    with st.form(key='metrics_form'):
+        company_cost = st.number_input("Biaya Maksimal Perusahaan", min_value=0.0, format="%.2f")
+        location_lat = st.number_input("Lokasi Tempat - Lat", format="%.6f")
+        location_long = st.number_input("Lokasi Tempat - Long", format="%.6f")
+        add_metrics = st.form_submit_button("Add Metrix")
+    
+    if add_metrics:
+        st.session_state.metrics = {
+            "Biaya Maksimal Perusahaan": company_cost,
+            "Lokasi": {"Lat": location_lat, "Long": location_long}
+        }
+        st.success("Data metrik berhasil ditambahkan!")
+    
+    if "metrics" in st.session_state:
+        st.subheader("Metrik")
+        st.write(st.session_state.metrics)
+    
+    # --- STEP 3: Optional Third Party Pengelola Limbah ---
+    st.header("Step 3: Third Party Pengelola Limbah (Opsional)")
+    include_third_party = st.checkbox("Include Third Party Waste Treatment Options")
+    
+    third_party_options = {}
+    if include_third_party:
+        st.subheader("Non-Hazardous Waste Options")
+        third_party_options["Non-Hazardous Waste"] = {}
+        non_hazardous_options = [
+            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning", 
+            "Open Dump", "Unsanitary Landfill", "Energy Recovery", 
+            "Industrial Composting", "Anaerobic Digestion"
+        ]
+        for option in non_hazardous_options:
+            capacity = st.number_input(f"{option} (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"nh_{option}")
+            third_party_options["Non-Hazardous Waste"][option] = capacity
+        
+        st.subheader("Hazardous Waste Options")
+        third_party_options["Hazardous Waste"] = {}
+        hazardous_options = [
+            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning", 
+            "Open Dump", "Unsanitary Landfill", "Energy Recovery"
+        ]
+        for option in hazardous_options:
+            capacity = st.number_input(f"{option} (%)", min_value=0.0, max_value=100.0, value=0.0, step=1.0, key=f"h_{option}")
+            third_party_options["Hazardous Waste"][option] = capacity
+
+    # --- Tombol Optimization ---
+    if st.button("Optimization"):
+        st.subheader("Input yang Diterima")
+        st.write("**Waste Data:**")
+        st.write(st.session_state.get("waste_data", "Tidak ada data limbah"))
+        st.write("**Metrik:**")
+        st.write(st.session_state.get("metrics", "Tidak ada data metrik"))
+        if include_third_party:
+            st.write("**Third Party Options:**")
+            st.write(third_party_options)
+        else:
+            st.write("Tidak ada opsi third party yang dipilih.")
+        
+        # Panggil fungsi optimisasi
+        result = run_optimization(
+            st.session_state.get("waste_data", []),
+            st.session_state.get("metrics", {}),
+            third_party_options if include_third_party else None
+        )
+        
+        st.subheader("Hasil Optimisasi")
+        st.write(result)
+
+if __name__ == '__main__':
     main()
