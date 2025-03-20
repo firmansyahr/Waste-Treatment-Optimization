@@ -82,7 +82,7 @@ def main():
         st.session_state.metrics = {}
 
     # --- STEP 1: Input Data Limbah ---
-    st.header("Step 1: Input Data Limbah")
+    st.header("Input Data Limbah")
     with st.form(key="waste_form"):
         # Membuat 4 kolom: Category, Type of Waste, Amount, Unit
         col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
@@ -124,7 +124,7 @@ def main():
         st.dataframe(df_style, use_container_width=True)
 
     # --- STEP 2: Input Metrik Lainnya ---
-    st.header("Step 2: Input Metrik Lainnya")
+    st.header("Input Metrik Perusahaan")
     with st.form(key='metrics_form'):
         company_cost = st.number_input("Biaya Maksimal Perusahaan (Rp)", min_value=0.0, format="%.2f")
         location_lat = st.number_input("Lokasi Tempat - Lat", format="%.6f")
@@ -141,8 +141,8 @@ def main():
         st.write(st.session_state.metrics)
 
     # --- STEP 3: Third Party Pengelola Limbah (Optional) ---
-    st.header("Step 3: Third Party Pengelola Limbah (Optional)")
-    include_third_party = st.checkbox("Include Third Party Pengelola Limbah")
+    st.header("Third Party Pengelola Limbah (Optional)")
+    include_third_party = st.checkbox("Memiliki Third Party Pengelola Limbah")
     third_party_options = None
     if include_third_party:
         st.subheader("Input Lokasi Third Party")
