@@ -73,8 +73,7 @@ def main():
 
         # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
         treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
-        # Tampilkan info Allowed Treatments sebagai informasi saja
-        st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
+        
 
         with col3:
             amount = st.number_input("Amount of Waste", min_value=0.0, step=0.1, format="%.2f")
