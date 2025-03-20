@@ -46,39 +46,61 @@ def main():
     # --- STEP 1: Input Data Limbah ---
     st.header("Step 1: Input Data Limbah")
     
-    with st.form(key='waste_form'):
-        waste_category = st.selectbox("Category", ["Non-Hazardous Waste", "Hazardous Waste"])
-        # Tampilkan opsi type berdasarkan kategori
+    # Menggunakan st.form untuk mengelompokkan input dalam satu form
+    with st.form(key="waste_form"):
+        # Membuat 5 kolom: Category, Type of Waste, Treatment, Amount of Waste, Unit
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 2, 2, 2])
+
+        with col1:
+            waste_category = st.selectbox("Category", ["Non-Hazardous Waste", "Hazardous Waste"])
+
+        # Tentukan daftar type of waste berdasarkan kategori
         if waste_category == "Non-Hazardous Waste":
-            waste_types = ["Paper", "Cardboard", "Plastic", "Glass", "Metal Scrap", 
-                           "Household Waste", "Wood", "Cement", "Concrete", "Wool", 
-                           "Biowaste", "Textile"]
+            waste_types = [
+                "Paper", "Cardboard", "Plastic", "Glass", "Metal Scrap",
+                "Household Waste", "Wood", "Cement", "Concrete", "Wool",
+                "Biowaste", "Textile"
+            ]
         else:
-            waste_types = ["Gypsump Plasterboard", "Sludge", "Paint", "Electronic Waste", "Other Hazardous Waste"]
-        waste_type = st.selectbox("Type of Waste", waste_types)
-        
-        # Tampilkan aturan treatment yang berlaku untuk kombinasi kategori dan tipe limbah
-        treatments = allowed_treatments.get(waste_category, {}).get(waste_type, [])
-        st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
-        
-        waste_weight = st.number_input("Berat", min_value=0.0, format="%.2f")
-        waste_uom = st.text_input("UoM", value="kg")
+            waste_types = [
+                "Gypsump Plasterboard", "Sludge", "Paint",
+                "Electronic Waste", "Other Hazardous Waste"
+            ]
+
+        with col2:
+            selected_waste_type = st.selectbox("Type of Waste", waste_types)
+
+        # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
+        treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
+
+        with col3:
+            selected_treatment = st.selectbox("Treatment", treatments)
+
+        with col4:
+            amount = st.number_input("Amount of Waste", min_value=0.0, step=0.1, format="%.2f")
+
+        with col5:
+            selected_unit = st.selectbox("Unit", ["g", "Kg", "Ton"])
+
+        # Tombol untuk menambahkan waste ke dalam session state
         add_waste = st.form_submit_button("Add Waste")
-    
+
+    # Jika tombol "Add Waste" ditekan
     if add_waste:
         new_waste = {
             "Category": waste_category,
-            "Type of Waste": waste_type,
-            "Berat": waste_weight,
-            "UoM": waste_uom,
-            "Allowed Treatments": treatments
+            "Type of Waste": selected_waste_type,
+            "Treatment": selected_treatment,
+            "Amount": amount,
+            "Unit": selected_unit
         }
         st.session_state.waste_data.append(new_waste)
         st.success("Data limbah berhasil ditambahkan!")
-    
+
+    # Tampilkan tabel data limbah yang telah diinput
     if st.session_state.waste_data:
-        st.subheader("Daftar Limbah")
-        st.write(st.session_state.waste_data)
+        st.subheader("Daftar Limbah yang Telah Ditambahkan")
+        st.table(st.session_state.waste_data)
     
     # --- STEP 2: Input Metrik Lainnya ---
     st.header("Step 2: Input Metrik Lainnya")
@@ -95,6 +117,7 @@ def main():
         }
         st.success("Data metrik berhasil ditambahkan!")
     
+    # Tampilkan data metrik jika sudah ada
     if st.session_state.metrics:
         st.subheader("Metrik")
         st.write(st.session_state.metrics)
