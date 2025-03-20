@@ -48,7 +48,6 @@ def main():
 
     # --- STEP 1: Input Data Limbah ---
     st.header("Step 1: Input Data Limbah")
-
     with st.form(key="waste_form"):
         # Membuat 4 kolom: Category, Type of Waste, Amount, Unit
         col1, col2, col3, col4 = st.columns([2, 2, 2, 2])
@@ -74,7 +73,7 @@ def main():
 
         # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
         treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
-        # Tampilkan info Allowed Treatments pada form (sebagai informasi saja)
+        # Tampilkan info Allowed Treatments sebagai informasi saja
         st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
 
         with col3:
@@ -100,7 +99,7 @@ def main():
     if st.session_state.waste_data:
         st.subheader("Daftar Limbah yang Telah Ditambahkan")
         st.table(st.session_state.waste_data)
-
+    
     # --- STEP 2: Input Metrik Lainnya ---
     st.header("Step 2: Input Metrik Lainnya")
     with st.form(key='metrics_form'):
@@ -119,7 +118,7 @@ def main():
     if st.session_state.metrics:
         st.subheader("Metrik")
         st.write(st.session_state.metrics)
-
+    
     # --- STEP 3: Third Party Pengelola Limbah (Optional) ---
     st.header("Step 3: Third Party Pengelola Limbah (Optional)")
     include_third_party = st.checkbox("Include Third Party Pengelola Limbah")
@@ -127,8 +126,9 @@ def main():
     third_party_options = None
     if include_third_party:
         st.subheader("Input Lokasi Third Party")
-        third_party_lat = st.number_input("Third Party Latitude", format="%.6f", key="tp_lat")
-        third_party_long = st.number_input("Third Party Longitude", format="%.6f", key="tp_long")
+        col_tp = st.columns(2)
+        third_party_lat = col_tp[0].number_input("Third Party Latitude", format="%.6f", key="tp_lat")
+        third_party_long = col_tp[1].number_input("Third Party Longitude", format="%.6f", key="tp_long")
         
         st.subheader("Non-Hazardous Waste Options")
         non_hazardous_options = [
@@ -137,10 +137,13 @@ def main():
             "Industrial Composting", "Anaerobic Digestion"
         ]
         third_party_non_hazardous = {}
-        for option in non_hazardous_options:
-            third_party_non_hazardous[option] = st.number_input(
-                f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"np_{option}"
-            )
+        # Atur input dalam 2 kolom per baris
+        for i in range(0, len(non_hazardous_options), 2):
+            cols = st.columns(2)
+            for j, option in enumerate(non_hazardous_options[i:i+2]):
+                third_party_non_hazardous[option] = cols[j].number_input(
+                    f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"np_{option}"
+                )
         
         st.subheader("Hazardous Waste Options")
         hazardous_options = [
@@ -148,10 +151,12 @@ def main():
             "Open Dump", "Unsanitary Landfill", "Energy Recovery"
         ]
         third_party_hazardous = {}
-        for option in hazardous_options:
-            third_party_hazardous[option] = st.number_input(
-                f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"hp_{option}"
-            )
+        for i in range(0, len(hazardous_options), 2):
+            cols = st.columns(2)
+            for j, option in enumerate(hazardous_options[i:i+2]):
+                third_party_hazardous[option] = cols[j].number_input(
+                    f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"hp_{option}"
+                )
         
         third_party_options = {
             "Lokasi": {"Latitude": third_party_lat, "Longitude": third_party_long},
