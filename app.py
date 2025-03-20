@@ -25,12 +25,15 @@ allowed_treatments = {
     }
 }
 
-# Fungsi dummy optimisasi (silakan ganti dengan model optimisasi yang diinginkan)
-def run_optimization(waste_data, metrics):
+# Fungsi dummy optimisasi (tambahkan parameter third_party_options)
+def run_optimization(waste_data, metrics, third_party_options=None):
     result = {
         "status": "Optimal",
         "total_cost": 12345.67,
-        "details": "Hasil optimisasi dummy berdasarkan input yang diberikan."
+        "details": "Hasil optimisasi dummy berdasarkan input yang diberikan.",
+        "waste_data": waste_data,
+        "metrics": metrics,
+        "third_party": third_party_options
     }
     return result
 
@@ -71,7 +74,7 @@ def main():
 
         # Dapatkan daftar treatment yang diizinkan untuk kategori + tipe terpilih
         treatments = allowed_treatments.get(waste_category, {}).get(selected_waste_type, [])
-        # Opsional: Tampilkan info Allowed Treatments di form
+        # Tampilkan info Allowed Treatments pada form (sebagai informasi saja)
         st.info(f"Allowed Treatments: {', '.join(treatments) if treatments else 'Tidak ada aturan'}")
 
         with col3:
@@ -81,27 +84,23 @@ def main():
             # Menjadikan "Kg" sebagai pilihan utama (default)
             selected_unit = st.selectbox("Unit", ["Kg", "g", "Ton"], index=0)
 
-        # Tombol untuk menambahkan waste ke dalam session state
         add_waste = st.form_submit_button("Add Waste")
 
-    # Jika tombol "Add Waste" ditekan
     if add_waste:
         new_waste = {
             "Category": waste_category,
             "Type of Waste": selected_waste_type,
             "Amount": amount,
             "Unit": selected_unit,
-            # Simpan Allowed Treatments agar terlihat di tabel
             "Allowed Treatments": ", ".join(treatments) if treatments else "-"
         }
         st.session_state.waste_data.append(new_waste)
         st.success("Data limbah berhasil ditambahkan!")
 
-    # Tampilkan tabel data limbah yang telah diinput
     if st.session_state.waste_data:
         st.subheader("Daftar Limbah yang Telah Ditambahkan")
         st.table(st.session_state.waste_data)
-    
+
     # --- STEP 2: Input Metrik Lainnya ---
     st.header("Step 2: Input Metrik Lainnya")
     with st.form(key='metrics_form'):
@@ -117,10 +116,48 @@ def main():
         }
         st.success("Data metrik berhasil ditambahkan!")
     
-    # Tampilkan data metrik jika sudah ada
     if st.session_state.metrics:
         st.subheader("Metrik")
         st.write(st.session_state.metrics)
+
+    # --- STEP 3: Third Party Pengelola Limbah (Optional) ---
+    st.header("Step 3: Third Party Pengelola Limbah (Optional)")
+    include_third_party = st.checkbox("Include Third Party Pengelola Limbah")
+    
+    third_party_options = None
+    if include_third_party:
+        st.subheader("Input Lokasi Third Party")
+        third_party_lat = st.number_input("Third Party Latitude", format="%.6f", key="tp_lat")
+        third_party_long = st.number_input("Third Party Longitude", format="%.6f", key="tp_long")
+        
+        st.subheader("Non-Hazardous Waste Options")
+        non_hazardous_options = [
+            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning",
+            "Open Dump", "Unsanitary Landfill", "Energy Recovery",
+            "Industrial Composting", "Anaerobic Digestion"
+        ]
+        third_party_non_hazardous = {}
+        for option in non_hazardous_options:
+            third_party_non_hazardous[option] = st.number_input(
+                f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"np_{option}"
+            )
+        
+        st.subheader("Hazardous Waste Options")
+        hazardous_options = [
+            "Sanitary Landfill", "Incineration", "Recycle", "Open Burning",
+            "Open Dump", "Unsanitary Landfill", "Energy Recovery"
+        ]
+        third_party_hazardous = {}
+        for option in hazardous_options:
+            third_party_hazardous[option] = st.number_input(
+                f"{option} (%)", min_value=0.0, max_value=100.0, step=1.0, value=0.0, key=f"hp_{option}"
+            )
+        
+        third_party_options = {
+            "Lokasi": {"Latitude": third_party_lat, "Longitude": third_party_long},
+            "Non-Hazardous Waste": third_party_non_hazardous,
+            "Hazardous Waste": third_party_hazardous
+        }
     
     # --- Tombol Optimization ---
     if st.button("Optimization"):
@@ -129,11 +166,16 @@ def main():
         st.write(st.session_state.get("waste_data", "Tidak ada data limbah"))
         st.write("**Metrik:**")
         st.write(st.session_state.get("metrics", "Tidak ada data metrik"))
+        if include_third_party:
+            st.write("**Third Party Options:**")
+            st.write(third_party_options)
+        else:
+            st.write("**Third Party Options:** Tidak ada")
         
-        # Panggil fungsi optimisasi
         result = run_optimization(
             st.session_state.get("waste_data", []),
-            st.session_state.get("metrics", {})
+            st.session_state.get("metrics", {}),
+            third_party_options
         )
         
         st.subheader("Hasil Optimisasi")
