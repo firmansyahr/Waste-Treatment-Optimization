@@ -17,13 +17,14 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
     facility_rules  = data.facility_rules
     max_prop_df     = data.max_prop_df
 
-    # Merge capacity with coordinates and Treatment column for facility_df
+    # Merge capacity with coordinates
     facility_df = (
         capacity_df
         .merge(locations_df, on='Facility_ID')
         .rename(columns={'Capacity':'Max_Capacity'})
     )
 
+    # Define LP model
     model = pulp.LpProblem("Waste_Optimization", pulp.LpMinimize)
     decision_vars = {}
 
@@ -74,7 +75,7 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                     f"MaxProp_{cat.replace(' ','')}_{trt.replace(' ','')}"
                 )
 
-    # Objective: minimize emissions
+    # Objective: minimize total emissions (treatment + transport)
     obj_terms = []
     for props in decision_vars.values():
         var = props['var']
@@ -87,7 +88,7 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         obj_terms.append(var * (props['em_factor'] + trans_em_total))
     model += pulp.lpSum(obj_terms), "Total_Emission"
 
-    # Budget constraint: cost
+    # Budget constraint: treatment + transport cost
     cost_terms = []
     for props in decision_vars.values():
         var = props['var']
@@ -100,14 +101,14 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         cost_terms.append(var * (props['tr_cost'] + trans_cost_total))
     model += (pulp.lpSum(cost_terms) <= max_budget, "Budget_Constraint")
 
+    # Solve the model
     model.solve()
 
-    # Collect results with TPA name instead of ID
+    # Collect results: include Category, replace Cost_Transport removed
     results = []
     for (item,tr,fid,idx), props in decision_vars.items():
         amt = props['var'].varValue
-        if amt and amt>0:
-            # get TPA name from locations_df
+        if amt is not None and amt > 0:
             tpa_name = locations_df.loc[locations_df['Facility_ID']==fid,'Location'].iloc[0]
             possible = transport_df[transport_df['Max_Capacity']>=amt]
             if possible.empty:
@@ -115,9 +116,10 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
             best = possible.nsmallest(1,'Emission_per_ton').iloc[0]
             dist_km = geodesic(origin_coords, props['coords']).km
             trans_em_total = best['Emission_per_ton'] * dist_km
-            trans_cost_total = best.get('Cost_per_ton',0.0) * dist_km
+            # assemble row without cost transport, but with Category
             results.append({
                 'Waste_Item': item,
+                'Category': props['category'],
                 'Treatment': tr,
                 'TPA_Name': tpa_name,
                 'Amount': amt,
@@ -126,9 +128,8 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                 'Distance_km': round(dist_km,2),
                 'Transport_Emission': trans_em_total,
                 'Cost_Treatment': props['tr_cost'],
-                'Cost_Transport': trans_cost_total,
                 'Total_Emission': amt*(props['em_factor']+trans_em_total),
-                'Total_Cost': amt*(props['tr_cost']+trans_cost_total)
+                'Total_Cost': amt*(props['tr_cost']+ (best.get('Cost_per_ton',0.0)*dist_km))
             })
     df = pd.DataFrame(results)
     return df, df['Total_Emission'].sum(), df['Total_Cost'].sum()
