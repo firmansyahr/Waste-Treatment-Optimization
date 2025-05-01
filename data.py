@@ -118,11 +118,8 @@ max_prop_data = [
     {'Category': 'Hazardous Waste', 'Treatment': 'Sanitary Landfill', 'Max_Proportion': 0.15},
     {'Category': 'Hazardous Waste', 'Treatment': 'Incineration', 'Max_Proportion': 0.8},
     {'Category': 'Hazardous Waste', 'Treatment': 'Recycle', 'Max_Proportion': 0.08},
-    {'Category': 'Hazardous Waste', 'Treatment': 'Open Burning', 'Max_Proportion': 1.0},
-    {'Category': 'Hazardous Waste', 'Treatment': 'Open Dump', 'Max_Proportion': 1.0},
-    {'Category': 'Hazardous Waste', 'Treatment': 'Unsanitary Landfill', 'Max_Proportion': 1.0},
     {'Category': 'Hazardous Waste', 'Treatment': 'Energy Recovery', 'Max_Proportion': 0.08},
 ]
 max_prop_df = pd.DataFrame(max_prop_data)
 
-facility_rules = {'TPA001': {'Category': ['Hazardous Waste'], 'Treatment': ['Recycle', 'Sanitary Landfill', 'Sanitary Landfill', 'Incineration', 'Energy Recovery', 'Sanitary Landfill', 'Incineration', 'Energy Recovery', 'Open Burning', 'Sanitary Landfill', 'Unsanitary Landfill', 'Recycle', 'Incineration', 'Energy Recovery', 'Sanitary Landfill']}, 'TPA002': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Sanitary Landfill']}, 'TPA003': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Incineration', 'Energy Recovery']}, 'TPA004': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Open Dump']}, 'TPA005': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Unsanitary Landfill']}, 'TPA006': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Anaerobic Digestion']}, 'TPA007': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Recycle']}}
+facility_rules = {'TPA001': {'Category': ['Hazardous Waste'], 'Treatment': ['Recycle', 'Sanitary Landfill', 'Incineration', 'Energy Recovery',]}, 'TPA002': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Sanitary Landfill']}, 'TPA003': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Incineration', 'Energy Recovery']}, 'TPA004': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Open Dump']}, 'TPA005': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Unsanitary Landfill']}, 'TPA006': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Anaerobic Digestion']}, 'TPA007': {'Category': ['Non-Hazardous Waste'], 'Treatment': ['Recycle']}}
