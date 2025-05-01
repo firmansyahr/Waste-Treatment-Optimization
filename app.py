@@ -1,15 +1,3 @@
-**Folder Structure**
-```
-project_root/
-├── data.py           # Static data (treatment, transport, facility, rules)
-└── streamlit_app.py  # Streamlit application
-```
-
----
-
-Below is the complete `streamlit_app.py`:
-
-```python
 import streamlit as st
 import pandas as pd
 import pulp
