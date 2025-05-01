@@ -33,13 +33,11 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         category = row['Category']
         qty      = float(row['Quantity'])
 
-        # Iterate over applicable treatments
         for _, t in treatments_df[treatments_df['Category'] == category].iterrows():
             tr        = t['Treatment']
             em_factor = float(t['Emission_Factor'])
             tr_cost   = float(t['Treatment_Cost'])
 
-            # Iterate over facilities matching rules
             for fid, rules in facility_rules.items():
                 if category in rules['Category'] and tr in rules['Treatment']:
                     fac = facility_df[
@@ -62,7 +60,6 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                         'coords': coords
                     }
 
-        # Demand constraint: allocation equals quantity
         model += (
             pulp.lpSum(v['var'] for (it, _, _), v in decision_vars.items() if it == item)
             == qty,
@@ -73,13 +70,11 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
     obj_terms = []
     for (item, tr, fid), props in decision_vars.items():
         var = props['var']
-        # Select transport mode
         possible = transport_df[transport_df['Max_Capacity'] >= var.upBound]
         if possible.empty:
             possible = transport_df
         best = possible.nsmallest(1, 'Emission_per_ton').iloc[0]
 
-        # Calculate transport emissions by distance
         dist_km = geodesic(origin_coords, props['coords']).km
         trans_em_total = best['Emission_per_ton'] * dist_km
         obj_terms.append(var * (props['em_factor'] + trans_em_total))
@@ -99,7 +94,7 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         cost_terms.append(var * (props['tr_cost'] + trans_cost_total))
     model += pulp.lpSum(cost_terms) <= max_budget, "Budget_Constraint"
 
-    # Solve model
+    # Solve
     model.solve()
 
     # Collect results
@@ -134,40 +129,30 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
     return df, df['Total_Emission'].sum(), df['Total_Cost'].sum()
 
 # Streamlit UI
-
 def main():
     st.title("Waste Treatment Optimization App")
-    st.markdown(
-        "Upload file Excel dengan kolom: Waste_Item, Category, (opsional) Quantity."
-    )
+    st.markdown("Upload file Excel dengan kolom: Waste_Item, Category, (opsional) Quantity.")
 
     uploaded = st.file_uploader("Pilih file Excel...", type=["xlsx", "xls"])
     max_budget = st.number_input("Maksimal Budget (Rp)", min_value=0.0, step=1000.0)
 
     st.subheader("Lokasi Asal Limbah")
-    origin_lat = st.number_input(
-        "Latitude", value=float(data.locations_df['Latitude'].mean())
-    )
-    origin_lon = st.number_input(
-        "Longitude", value=float(data.locations_df['Longitude'].mean())
-    )
+    origin_lat = st.number_input("Latitude", value=float(data.locations_df['Latitude'].mean()))
+    origin_lon = st.number_input("Longitude", value=float(data.locations_df['Longitude'].mean()))
     origin_coords = (origin_lat, origin_lon)
 
     if uploaded and max_budget > 0:
-        user_df = pd.read_excel(uploaded)
+        # Read Excel with openpyxl engine
+        user_df = pd.read_excel(uploaded, engine='openpyxl')
         if st.button("Jalankan Optimasi"):
             with st.spinner("Mengoptimalkan..."):
-                res_df, tot_em, tot_ct = optimize_waste(
-                    user_df, max_budget, origin_coords
-                )
+                res_df, tot_em, tot_ct = optimize_waste(user_df, max_budget, origin_coords)
             st.subheader("Hasil Optimasi")
             st.write(f"**Total Emisi:** {tot_em:.2f} kg CO₂")
             st.write(f"**Total Biaya:** Rp {tot_ct:,.2f}")
             st.dataframe(res_df)
             csv = res_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "Download CSV", csv, "results.csv", "text/csv"
-            )
+            st.download_button("Download CSV", csv, "results.csv", "text/csv")
 
 if __name__ == "__main__":
     main()
