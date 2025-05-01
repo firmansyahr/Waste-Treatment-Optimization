@@ -6,29 +6,24 @@ import data
 
 # Optimization function
 def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tuple):
-    # Ensure Quantity column exists
+    # Default Quantity if missing
     if 'Quantity' not in user_df.columns:
         user_df['Quantity'] = 1.0
 
-    treatments_df      = data.treatments_df
-    transport_df       = data.transport_df
-    locations_df       = data.locations_df
-    capacity_df        = data.facility_capacity_df
-    facility_rules     = data.facility_rules
+    treatments_df  = data.treatments_df
+    transport_df   = data.transport_df
+    locations_df   = data.locations_df
+    capacity_df    = data.facility_capacity_df
+    facility_rules = data.facility_rules
 
-    # Merge facility capacity with coordinates
-    facility_df = (
-        capacity_df
-        .merge(locations_df, on='Facility_ID')
-        .rename(columns={'Capacity': 'Max_Capacity'})
-    )
+    # Merge capacity with coords
+    facility_df = capacity_df.merge(locations_df, on='Facility_ID').rename(columns={'Capacity':'Max_Capacity'})
 
-    # Define LP model
     model = pulp.LpProblem("Waste_Optimization", pulp.LpMinimize)
     decision_vars = {}
 
-    # Create decision variables and demand constraints
-    for _, row in user_df.iterrows():
+    # Create decision variables and demand constraints per input row
+    for idx, row in user_df.iterrows():
         item     = row['Waste_Item']
         category = row['Category']
         qty      = float(row['Quantity'])
@@ -40,36 +35,31 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
 
             for fid, rules in facility_rules.items():
                 if category in rules['Category'] and tr in rules['Treatment']:
-                    fac = facility_df[
-                        (facility_df['Facility_ID'] == fid) &
-                        (facility_df['Treatment'] == tr)
-                    ]
+                    fac = facility_df[(facility_df['Facility_ID']==fid) & (facility_df['Treatment']==tr)]
                     if fac.empty:
                         continue
-                    cap    = float(fac['Max_Capacity'].iloc[0])
-                    coords = (
-                        float(fac['Latitude'].iloc[0]),
-                        float(fac['Longitude'].iloc[0])
-                    )
-                    var = pulp.LpVariable(f"x_{item}_{tr}_{fid}", lowBound=0, upBound=qty)
-                    decision_vars[(item, tr, fid)] = {
+                    coords = (float(fac['Latitude'].iloc[0]), float(fac['Longitude'].iloc[0]))
+                    var_name = f"x_{item}_{tr}_{fid}_{idx}"
+                    var = pulp.LpVariable(var_name, lowBound=0, upBound=qty)
+                    decision_vars[(item, tr, fid, idx)] = {
                         'var': var,
                         'em_factor': em_factor,
                         'tr_cost': tr_cost,
-                        'capacity': cap,
                         'coords': coords
                     }
-
+        # Unique demand constraint name per row
+        constraint_name = f"Demand_{item}_{idx}"
         model += (
-            pulp.lpSum(v['var'] for (it, _, _), v in decision_vars.items() if it == item)
+            pulp.lpSum(props['var'] for (it,_,_,i), props in decision_vars.items() if it==item and i==idx)
             == qty,
-            f"Demand_{item}"
+            constraint_name
         )
 
     # Objective: minimize total emissions (treatment + transport)
     obj_terms = []
-    for (item, tr, fid), props in decision_vars.items():
+    for props in decision_vars.values():
         var = props['var']
+        # choose transport mode
         possible = transport_df[transport_df['Max_Capacity'] >= var.upBound]
         if possible.empty:
             possible = transport_df
@@ -80,9 +70,9 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         obj_terms.append(var * (props['em_factor'] + trans_em_total))
     model += pulp.lpSum(obj_terms), "Total_Emission"
 
-    # Budget constraint (treatment + transport cost)
+    # Budget constraint: treatment + transport cost
     cost_terms = []
-    for (item, tr, fid), props in decision_vars.items():
+    for props in decision_vars.values():
         var = props['var']
         possible = transport_df[transport_df['Max_Capacity'] >= var.upBound]
         if possible.empty:
@@ -94,14 +84,14 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         cost_terms.append(var * (props['tr_cost'] + trans_cost_total))
     model += pulp.lpSum(cost_terms) <= max_budget, "Budget_Constraint"
 
-    # Solve
+    # Solve the model
     model.solve()
 
     # Collect results
     results = []
-    for (item, tr, fid), props in decision_vars.items():
+    for (item, tr, fid, idx), props in decision_vars.items():
         amt = props['var'].varValue
-        if amt and amt > 0:
+        if amt is not None and amt > 0:
             possible = transport_df[transport_df['Max_Capacity'] >= amt]
             if possible.empty:
                 possible = transport_df
@@ -131,18 +121,21 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
 # Streamlit UI
 def main():
     st.title("Waste Treatment Optimization App")
-    st.markdown("Upload file Excel dengan kolom: Waste_Item, Category, (opsional) Quantity.")
+    st.markdown("**Upload file Excel** dengan kolom: Waste_Item, Category, (opsional) Quantity.")
 
-    uploaded = st.file_uploader("Pilih file Excel...", type=["xlsx", "xls"])
+    uploaded   = st.file_uploader("Pilih file Excel...", type=["xlsx", "xls"])
     max_budget = st.number_input("Maksimal Budget (Rp)", min_value=0.0, step=1000.0)
 
     st.subheader("Lokasi Asal Limbah")
-    origin_lat = st.number_input("Latitude", value=float(data.locations_df['Latitude'].mean()))
-    origin_lon = st.number_input("Longitude", value=float(data.locations_df['Longitude'].mean()))
+    origin_lat = st.number_input(
+        "Latitude", value=float(data.locations_df['Latitude'].mean())
+    )
+    origin_lon = st.number_input(
+        "Longitude", value=float(data.locations_df['Longitude'].mean())
+    )
     origin_coords = (origin_lat, origin_lon)
 
     if uploaded and max_budget > 0:
-        # Read Excel with openpyxl engine
         user_df = pd.read_excel(uploaded, engine='openpyxl')
         if st.button("Jalankan Optimasi"):
             with st.spinner("Mengoptimalkan..."):
