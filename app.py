@@ -102,9 +102,10 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
     model += (pulp.lpSum(cost_terms) <= max_budget, "Budget_Constraint")
 
     # Solve the model
-    model.solve()
+    status_code = model.solve()
+    status = pulp.LpStatus.get(status_code, 'Unknown')
 
-    # Collect results: include Category, replace Cost_Transport removed
+    # Collect results: include Category, TPA Name, etc.
     results = []
     for (item,tr,fid,idx), props in decision_vars.items():
         amt = props['var'].varValue
@@ -116,7 +117,6 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
             best = possible.nsmallest(1,'Emission_per_ton').iloc[0]
             dist_km = geodesic(origin_coords, props['coords']).km
             trans_em_total = best['Emission_per_ton'] * dist_km
-            # assemble row without cost transport, but with Category
             results.append({
                 'Waste_Item': item,
                 'Category': props['category'],
@@ -129,10 +129,10 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                 'Transport_Emission': trans_em_total,
                 'Cost_Treatment': props['tr_cost'],
                 'Total_Emission': amt*(props['em_factor']+trans_em_total),
-                'Total_Cost': amt*(props['tr_cost']+ (best.get('Cost_per_ton',0.0)*dist_km))
+                'Total_Cost': amt*(props['tr_cost'] + (best.get('Cost_per_ton',0.0)*dist_km))
             })
     df = pd.DataFrame(results)
-    return df, df['Total_Emission'].sum(), df['Total_Cost'].sum()
+    return df, df['Total_Emission'].sum(), df['Total_Cost'].sum(), status
 
 # Streamlit UI
 def main():
@@ -151,7 +151,8 @@ def main():
         user_df = pd.read_excel(uploaded, engine='openpyxl')
         if st.button("Jalankan Optimasi"):
             with st.spinner("Mengoptimalkan..."):
-                res_df, tot_em, tot_ct = optimize_waste(user_df, max_budget, origin_coords)
+                res_df, tot_em, tot_ct, status = optimize_waste(user_df, max_budget, origin_coords)
+            st.subheader("Status Solusi: " + status)
             st.subheader("Hasil Optimasi")
             st.write(f"**Total Emisi:** {tot_em:.2f} kg CO₂")
             st.write(f"**Total Biaya:** Rp {tot_ct:,.2f}")
