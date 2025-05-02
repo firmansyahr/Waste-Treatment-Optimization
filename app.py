@@ -5,79 +5,72 @@ from geopy.distance import geodesic
 import data
 
 def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tuple):
-    # Input waste in tons → convert to kg
+    # Input waste quantity in tons; convert to kg
     user_df = user_df.copy()
     if 'Quantity' not in user_df.columns:
         user_df['Quantity'] = 1.0
-    # Quantity column now in tons; convert to kg
+    # Quantity in tons -> kg
     user_df['Quantity_kg'] = user_df['Quantity'] * 1000.0
 
-    # Load static data (all per kg)
-    treatments_df   = data.treatments_df   # Emission_Factor (kgCO2/kg), Treatment_Cost (Rp/kg)
-    transport_df    = data.transport_df    # Emission_per_kg (kgCO2 per kg-km), Cost_per_kg (Rp per kg-km), Max_Capacity (kg)
-    locations_df    = data.locations_df    # Facility_ID, Latitude, Longitude
-    capacity_df     = data.facility_capacity_df  # Facility_ID, Capacity (kg)
-    facility_rules  = data.facility_rules
-    max_prop_df     = data.max_prop_df    # Category, Treatment, Max_Proportion
+    # Load static data (emission & cost per kg, capacity in kg)
+    treatments_df = data.treatments_df.copy()
+    transport_df  = data.transport_df.copy()
+    locations_df  = data.locations_df
+    capacity_df   = data.facility_capacity_df.copy()
+    facility_rules = data.facility_rules
+    max_prop_df   = data.max_prop_df
 
-    # Merge capacities with coords
-    facility_df = capacity_df.merge(locations_df, on='Facility_ID')
+    # Convert transport units: per ton -> per kg, and capacity ton -> kg
+    transport_df['Emission_per_kg'] = transport_df['Emission_per_ton'] / 1000.0
+    if 'Cost_per_ton' in transport_df.columns:
+        transport_df['Cost_per_kg'] = transport_df['Cost_per_ton'] / 1000.0
+    else:
+        transport_df['Cost_per_kg'] = 0.0
+    transport_df['Max_Capacity'] *= 1000.0
+
+    # Convert facility capacities from tons to kg
+    capacity_df['Capacity'] *= 1000.0
+
+    # Merge capacities with coordinates
+    facility_df = capacity_df.merge(locations_df, on='Facility_ID').rename(columns={'Capacity':'Max_Capacity'})
 
     # Build LP model
     model = pulp.LpProblem("Waste_Optimization_kg_input_ton", pulp.LpMinimize)
     decision_vars = {}
 
-    # Demand constraints and decision vars
+    # Decision variables & demand
     for idx, row in user_df.iterrows():
-        item     = row['Waste_Item']
-        category = row['Category']
-        qty_kg   = row['Quantity_kg']
-
-        # Treatments valid for this item & category
-        applicable = treatments_df[
-            (treatments_df['Waste_Item']==item) &
-            (treatments_df['Category']==category)
-        ]
+        item, category, qty_kg = row['Waste_Item'], row['Category'], row['Quantity_kg']
+        # Valid treatments for this item+cat
+        applicable = treatments_df[(treatments_df['Waste_Item']==item) & (treatments_df['Category']==category)]
         for _, t in applicable.iterrows():
-            tr        = t['Treatment']
-            em_factor = float(t['Emission_Factor'])  # kgCO2 per kg
-            tr_cost   = float(t['Treatment_Cost'])    # Rp per kg
-
-            # Facilities that accept
+            tr, em_fac, tr_cost = t['Treatment'], float(t['Emission_Factor']), float(t['Treatment_Cost'])
             for fid, rules in facility_rules.items():
                 if category in rules['Category'] and tr in rules['Treatment']:
-                    fac = facility_df[
-                        (facility_df['Facility_ID']==fid) &
-                        (facility_df['Treatment']==tr)
-                    ] if 'Treatment' in facility_df.columns else facility_df[facility_df['Facility_ID']==fid]
+                    fac = facility_df[(facility_df['Facility_ID']==fid) & (facility_df.get('Treatment',tr)==tr)]
                     if fac.empty:
                         continue
                     coords = (float(fac['Latitude'].iloc[0]), float(fac['Longitude'].iloc[0]))
-                    # var in kg
-                    var = pulp.LpVariable(f"x_{idx}_{item}_{tr}_{fid}", lowBound=0, upBound=qty_kg)
+                    var = pulp.LpVariable(f"x_{idx}_{tr}_{fid}", lowBound=0, upBound=qty_kg)
                     decision_vars[(idx, item, category, tr, fid)] = {
                         'var': var,
-                        'em_factor': em_factor,
+                        'em_fac': em_fac,
                         'tr_cost': tr_cost,
                         'coords': coords
                     }
-        # Demand: sum allocations == qty_kg
+        # Demand constraint
         model += (
             pulp.lpSum(v['var'] for (i,_,_,_,_), v in decision_vars.items() if i==idx) == qty_kg,
             f"Demand_{idx}"
         )
 
-    # Max-proportion constraints (unitless·kg)
-    total_by_cat = user_df.groupby('Category')['Quantity_kg'].sum().to_dict()
+    # Max-proportion constraints
+    totals = user_df.groupby('Category')['Quantity_kg'].sum().to_dict()
     for _, mp in max_prop_df.iterrows():
-        cat = mp['Category']
-        trt = mp['Treatment']
-        prop = float(mp['Max_Proportion'])
-        if cat not in total_by_cat:
+        cat, trt, prop = mp['Category'], mp['Treatment'], float(mp['Max_Proportion'])
+        if cat not in totals:
             continue
-        cap_kg = prop * total_by_cat[cat]
-        vars_for = [v['var'] for v in decision_vars.values() if v['var'].name.split('_')[2]==trt and v['var'].name.split('_')[3]==cat]
-        # safer: filter by stored category/treatment
+        cap_kg = prop * totals[cat]
         vars_for = [v['var'] for k,v in decision_vars.items() if k[2]==cat and k[3]==trt]
         if vars_for:
             model += (
@@ -87,47 +80,46 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
 
     # Facility capacity constraints
     for fid in facility_df['Facility_ID'].unique():
-        cap_kg = float(capacity_df.loc[capacity_df['Facility_ID']==fid, 'Capacity'].iloc[0])
-        vars_at = [v['var'] for k,v in decision_vars.items() if k[4]==fid]
-        if vars_at:
+        cap_kg = float(facility_df.loc[facility_df['Facility_ID']==fid, 'Max_Capacity'].iloc[0])
+        terms = [v['var'] for k,v in decision_vars.items() if k[4]==fid]
+        if terms:
             model += (
-                pulp.lpSum(vars_at) <= cap_kg,
+                pulp.lpSum(terms) <= cap_kg,
                 f"Cap_{fid}"
             )
 
-    # Objective: minimize emissions (treatment + transport)
+    # Objective: minimize emissions\    
     obj_terms = []
-    for k, props in decision_vars.items():
-        var = props['var']  # kg
-        em_treat = var * props['em_factor']
-        # transport emission: kgCO2 per kg-km * distance * var
-        poss = transport_df[transport_df['Max_Capacity'] >= var.upBound]
+    for props in decision_vars.values():
+        var_kg = props['var']
+        em_treat = var_kg * props['em_fac']          # kgCO2
+        poss = transport_df[transport_df['Max_Capacity']>=var_kg]
         if poss.empty:
             poss = transport_df
         best = poss.nsmallest(1, 'Emission_per_kg').iloc[0]
         dist = geodesic(origin_coords, props['coords']).km
-        em_trans = var * best['Emission_per_kg'] * dist
+        em_trans = var_kg * best['Emission_per_kg'] * dist
         obj_terms.append(em_treat + em_trans)
     model += pulp.lpSum(obj_terms), "Total_Emission"
 
-    # Budget constraint: cost (treatment + transport)
+    # Budget constraint: treatment + transport cost
     cost_terms = []
-    for k, props in decision_vars.items():
-        var = props['var']
-        cost_treat = var * props['tr_cost']
-        poss = transport_df[transport_df['Max_Capacity'] >= var.upBound]
+    for props in decision_vars.values():
+        var_kg = props['var']
+        cost_tr = var_kg * props['tr_cost']
+        poss = transport_df[transport_df['Max_Capacity']>=var_kg]
         if poss.empty:
             poss = transport_df
         best = poss.nsmallest(1, 'Cost_per_kg').iloc[0]
         dist = geodesic(origin_coords, props['coords']).km
-        cost_trans = var * best['Cost_per_kg'] * dist
-        cost_terms.append(cost_treat + cost_trans)
+        cost_trans = var_kg * best['Cost_per_kg'] * dist
+        cost_terms.append(cost_tr + cost_trans)
     model += (
         pulp.lpSum(cost_terms) <= max_budget,
         "Budget_Constraint"
     )
 
-    # Solve
+    # Solve model
     status_code = model.solve()
     status = pulp.LpStatus.get(status_code, "Unknown")
 
@@ -137,7 +129,7 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
         amt_kg = props['var'].varValue or 0
         if amt_kg > 1e-6:
             tpa = data.locations_df.loc[data.locations_df['Facility_ID']==fid, 'Location'].iloc[0]
-            poss = transport_df[transport_df['Max_Capacity'] >= amt_kg]
+            poss = transport_df[transport_df['Max_Capacity']>=amt_kg]
             if poss.empty:
                 poss = transport_df
             best = poss.nsmallest(1, 'Emission_per_kg').iloc[0]
@@ -148,12 +140,8 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                 'Treatment': tr,
                 'TPA_Name': tpa,
                 'Amount_kg': round(amt_kg, 3),
-                'Emission_kgCO2_treatment': round(amt_kg*props['em_factor'],3),
-                'Emission_kgCO2_transport': round(amt_kg*best['Emission_per_kg']*dist,3),
-                'Total_Emission_kgCO2': round(amt_kg*(props['em_factor']+best['Emission_per_kg']*dist),3),
-                'Cost_Rp_treatment': round(amt_kg*props['tr_cost'],2),
-                'Cost_Rp_transport': round(amt_kg*best['Cost_per_kg']*dist,2),
-                'Total_Cost_Rp': round(amt_kg*(props['tr_cost']+best['Cost_per_kg']*dist),2)
+                'Total_Emission_kgCO2': round(amt_kg * (props['em_fac'] + best['Emission_per_kg'] * dist), 3),
+                'Total_Cost_Rp': round(amt_kg * (props['tr_cost'] + best['Cost_per_kg'] * dist), 2)
             })
     df_out = pd.DataFrame(results)
     return df_out, df_out['Total_Emission_kgCO2'].sum(), df_out['Total_Cost_Rp'].sum(), status
