@@ -149,8 +149,9 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
 # Streamlit UI remains same but displays Amount_kg and updated fields
 
 def main():
-    st.title("Waste Treatment Optimization (static in kg, input in ton)")
-    st.markdown("Upload Excel with Waste_Item, Category, Quantity (in tons). Static data uses kg.")
+    st.title("Waste Treatment Optimization")
+    st.markdown("<a href="https://docs.google.com/spreadsheets/d/1_w-_bBK6BpI3i-WM6L8ZlSZphyOCx3yco_TBh1cCnH0/edit?usp=sharing" target="_blank">Download Template</a>',
+    unsafe_allow_html=True")
     uploaded = st.file_uploader("Choose Excel...", type=["xlsx","xls"])
     max_budget = st.number_input("Max Budget (Rp)", min_value=0.0, step=1000.0)
     st.subheader("Origin Coordinates")
