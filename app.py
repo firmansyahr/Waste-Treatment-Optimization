@@ -19,18 +19,6 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
     facility_rules = data.facility_rules
     max_prop_df   = data.max_prop_df
 
-    # Convert treatment factors from per ton to per kg
-    treatments_df['Emission_Factor'] = treatments_df['Emission_Factor'] / 1000.0  # kgCO2 per kg
-    treatments_df['Treatment_Cost']    = treatments_df['Treatment_Cost']    / 1000.0  # Rp per kg
-
-    # Convert transport factors from per ton to per kg, capacities to kg
-    transport_df['Emission_per_kg'] = transport_df['Emission_per_ton'] / 1000.0  # kgCO2 per kg-km
-    transport_df['Cost_per_kg']      = transport_df.get('Cost_per_ton', 0.0) / 1000.0  # Rp per kg-km
-    transport_df['Max_Capacity']     = transport_df['Max_Capacity'] * 1000.0      # kg
-
-    # Convert facility capacities from tons to kg
-    capacity_df['Capacity'] = capacity_df['Capacity'] * 1000.0  # kg
-
     # Merge capacity with coordinates
     facility_df = (
         capacity_df
