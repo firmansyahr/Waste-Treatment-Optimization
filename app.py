@@ -7,190 +7,186 @@ from geopy.distance import geodesic
 import data
 
 def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tuple):
-    # 1) Pastikan kolom Quantity ada
+    # 1) Siapkan Quantity
     if 'Quantity' not in user_df.columns:
         user_df['Quantity'] = 1.0
 
-    # 2) Load data statis
-    treatments_df   = data.treatments_df
-    transport_df    = data.transport_df
-    locations_df    = data.locations_df
-    capacity_df     = data.facility_capacity_df
-    facility_rules  = data.facility_rules
-    max_prop_df     = data.max_prop_df
+    # 2) Load static data
+    TREAT = data.treatments_df
+    TRANS  = data.transport_df
+    LOC    = data.locations_df
+    CAPTY  = data.facility_capacity_df
+    RULES  = data.facility_rules
+    MP     = data.max_prop_df
 
-    # 3) Merge capacity + coords
-    facility_df = (
-        capacity_df
-        .merge(locations_df, on='Facility_ID')
-        .rename(columns={'Capacity':'Max_Capacity'})
-    )
+    # 3) Merge kapasitas + koordinat
+    F = (CAPTY
+         .merge(LOC, on='Facility_ID')
+         .rename(columns={'Capacity':'Max_Capacity'}))
 
-    # 4) Definisikan model
-    model = pulp.LpProblem("Waste_Optimization", pulp.LpMinimize)
-    decision_vars = {}
+    # 4) Mulai model
+    mdl = pulp.LpProblem("WasteOpt", pulp.LpMinimize)
 
-    # 5) Decision vars & demand constraints
+    # 5) Total per kategori
+    total_by_cat = user_df.groupby('Category')['Quantity'].sum().to_dict()
+
+    # 6) Variabel y untuk alokasi kategori→treatment
+    y_vars = {}
+    for _, row in MP.iterrows():
+        cat, trt, prop = row['Category'], row['Treatment'], float(row['Max_Proportion'])
+        if cat not in total_by_cat:
+            continue
+        ub = prop * total_by_cat[cat]
+        y = pulp.LpVariable(f"y_{cat}_{trt}", lowBound=0, upBound=ub)
+        y_vars[(cat,trt)] = y
+
+    # 7) Constraint: ∑ₜ y_{cat,ₜ} = total_by_cat
+    for cat, total in total_by_cat.items():
+        mdl += (
+            pulp.lpSum(y_vars[(cat,trt)]
+                       for _,trt, _ in MP.itertuples(index=False)
+                       if (cat,trt) in y_vars)
+            == total,
+            f"SumByCat_{cat}"
+        )
+
+    # 8) Decision vars x untuk setiap baris input
+    x_vars = {}
     for idx, row in user_df.iterrows():
         item, cat, qty = row['Waste_Item'], row['Category'], float(row['Quantity'])
-        # hanya treatments di treatments_df untuk item+cat
-        app = treatments_df[
-            (treatments_df['Waste_Item']==item) &
-            (treatments_df['Category']==cat)
-        ]
+        # treatments yang valid
+        app = TREAT[(TREAT['Waste_Item']==item)&(TREAT['Category']==cat)]
         for _, t in app.iterrows():
-            tr, em_f, tr_cost = t['Treatment'], float(t['Emission_Factor']), float(t['Treatment_Cost'])
-            for fid, rules in facility_rules.items():
-                if cat in rules['Category'] and tr in rules['Treatment']:
-                    fac = facility_df[
-                        (facility_df['Facility_ID']==fid)&
-                        (facility_df['Treatment']==tr)
-                    ]
-                    if fac.empty: continue
+            trt, ef, tc = t['Treatment'], float(t['Emission_Factor']), float(t['Treatment_Cost'])
+            for fid, rules in RULES.items():
+                if cat in rules['Category'] and trt in rules['Treatment']:
+                    fac = F[(F['Facility_ID']==fid)&(F['Treatment']==trt)]
+                    if fac.empty: 
+                        continue
                     coords = (fac['Latitude'].iloc[0], fac['Longitude'].iloc[0])
-                    var = pulp.LpVariable(f"x_{idx}_{item}_{tr}_{fid}", lowBound=0, upBound=qty)
-                    decision_vars[(idx,item,cat,tr,fid)] = {
-                        'var': var, 'category': cat, 'treatment': tr,
-                        'em_factor': em_f, 'tr_cost': tr_cost, 'coords': coords
+                    x = pulp.LpVariable(f"x_{idx}_{trt}_{fid}", lowBound=0, upBound=qty)
+                    x_vars[(idx,item,cat,trt,fid)] = {
+                        'var': x, 'em_factor':ef, 'tr_cost':tc, 'coords':coords
                     }
+                    # link x ≤ y_cat_trt
+                    mdl += (
+                        x <= y_vars[(cat,trt)],
+                        f"Link_{idx}_{cat}_{trt}"
+                    )
         # demand == qty
-        model += (
+        mdl += (
             pulp.lpSum(v['var']
-                       for k,v in decision_vars.items() if k[0]==idx)
+                       for (i,it,ct,tt,f),v in x_vars.items() if i==idx)
             == qty,
             f"Demand_{idx}"
         )
 
-    # 6) Max-proportion constraints
-    total_by_cat = user_df.groupby('Category')['Quantity'].sum().to_dict()
-    for _, mp in max_prop_df.iterrows():
-        cat, trt, prop = mp['Category'], mp['Treatment'], float(mp['Max_Proportion'])
-        if cat not in total_by_cat: continue
-        cap = prop * total_by_cat[cat]
-        vars_for = [
-            v['var'] for k,v in decision_vars.items()
-            if v['category']==cat and v['treatment']==trt
-        ]
-        if vars_for:
-            model += (
-                pulp.lpSum(vars_for) <= cap,
-                f"MaxProp_{cat.replace(' ','')}_{trt.replace(' ','')}"
-            )
+    # 9) Capacity per TPA
+    for fid in F['Facility_ID'].unique():
+        cap = float(F.loc[F['Facility_ID']==fid,'Max_Capacity'].iloc[0])
+        mdl += (
+            pulp.lpSum(v['var']
+                       for (_,_,_,_,f),v in x_vars.items() if f==fid)
+            <= cap,
+            f"Cap_{fid}"
+        )
 
-    # 7) Capacity per TPA
-    for fid in facility_df['Facility_ID'].unique():
-        cap = float(facility_df.loc[facility_df['Facility_ID']==fid,'Max_Capacity'].iloc[0])
-        vars_f = [v['var'] for k,v in decision_vars.items() if k[4]==fid]
-        if vars_f:
-            model += (
-                pulp.lpSum(vars_f) <= cap,
-                f"Cap_{fid}"
-            )
-
-    # 8) Objective: minimalisasi emisi
-    terms = []
-    for v in decision_vars.values():
+    # 10) Objective: minimize emisi total
+    obj = []
+    for v in x_vars.values():
         var = v['var']
-        poss = transport_df[transport_df['Max_Capacity']>=var.upBound]
-        if poss.empty: poss = transport_df
+        poss = TRANS[TRANS['Max_Capacity']>=var.upBound]
+        if poss.empty: poss = TRANS
         best = poss.nsmallest(1,'Emission_per_ton').iloc[0]
-        d_km = geodesic(origin_coords, v['coords']).km
-        terms.append(var*(v['em_factor']+best['Emission_per_ton']*d_km))
-    model += pulp.lpSum(terms), "Total_Emission"
+        d = geodesic(origin_coords, v['coords']).km
+        obj.append(var*(v['em_factor'] + best['Emission_per_ton']*d))
+    mdl += pulp.lpSum(obj), "TotalEmission"
 
-    # 9) Budget constraint
-    cost_terms = []
-    for v in decision_vars.values():
+    # 11) Budget constraint
+    costs = []
+    for v in x_vars.values():
         var = v['var']
-        poss = transport_df[transport_df['Max_Capacity']>=var.upBound]
-        if poss.empty: poss = transport_df
+        poss = TRANS[TRANS['Max_Capacity']>=var.upBound]
+        if poss.empty: poss = TRANS
         best = poss.nsmallest(1,'Emission_per_ton').iloc[0]
-        d_km = geodesic(origin_coords, v['coords']).km
-        cost_terms.append(var*(v['tr_cost']+best.get('Cost_per_ton',0.0)*d_km))
-    model += (
-        pulp.lpSum(cost_terms)<= max_budget,
+        d = geodesic(origin_coords, v['coords']).km
+        costs.append(var*(v['tr_cost'] + best.get('Cost_per_ton',0.0)*d))
+    mdl += (
+        pulp.lpSum(costs) <= max_budget,
         "Budget"
     )
 
-    # 10) Solve & status
-    status_code = model.solve()
-    status = pulp.LpStatus.get(status_code, "Unknown")
+    # 12) Solve & status
+    stat = mdl.solve()
+    status = pulp.LpStatus.get(stat, "Unknown")
 
-    # 11) Collect hasil
+    # 13) Kumpulkan hasil
     rows = []
-    for (idx,item,cat,tr,fid), v in decision_vars.items():
+    for (idx,item,cat,trt,fid),v in x_vars.items():
         amt = v['var'].varValue or 0
         if amt>1e-6:
-            tpa = data.locations_df.loc[
-                data.locations_df['Facility_ID']==fid,'Location'
-            ].iloc[0]
-            poss = transport_df[transport_df['Max_Capacity']>=amt]
-            if poss.empty: poss = transport_df
+            tpa = LOC.loc[LOC['Facility_ID']==fid,'Location'].iloc[0]
+            poss = TRANS[TRANS['Max_Capacity']>=amt]
+            if poss.empty: poss = TRANS
             best = poss.nsmallest(1,'Emission_per_ton').iloc[0]
-            d_km = geodesic(origin_coords, v['coords']).km
+            d = geodesic(origin_coords, v['coords']).km
             rows.append({
                 'Waste_Item': item,
                 'Category': cat,
-                'Treatment': tr,
+                'Treatment': trt,
                 'TPA_Name': tpa,
                 'Amount': round(amt,6),
                 'Treatment_Emission': v['em_factor'],
                 'Transport_Mode': best['Mode'],
-                'Distance_km': round(d_km,2),
-                'Transport_Emission': best['Emission_per_ton']*d_km,
+                'Distance_km': round(d,2),
+                'Transport_Emission': best['Emission_per_ton']*d,
                 'Cost_Treatment': v['tr_cost'],
-                'Total_Emission': amt*(v['em_factor']+best['Emission_per_ton']*d_km),
-                'Total_Cost': amt*(v['tr_cost']+best.get('Cost_per_ton',0.0)*d_km)
+                'Total_Emission': amt*(v['em_factor']+best['Emission_per_ton']*d),
+                'Total_Cost': amt*(v['tr_cost']+best.get('Cost_per_ton',0.0)*d)
             })
-
     result_df = pd.DataFrame(rows)
 
-    # 12) **Debug: tampilkan proporsi aktual vs batas**
+    # debug proporsi aktual
     prop_checks = []
-    for _, mp in max_prop_df.iterrows():
-        cat, trt, prop = mp['Category'], mp['Treatment'], float(mp['Max_Proportion'])
-        total_cat = total_by_cat.get(cat,0)
+    for (cat,trt),y in y_vars.items():
         alloc = result_df.loc[
             (result_df['Category']==cat)&
-            (result_df['Treatment']==trt),'Amount'
+            (result_df['Treatment']==trt),
+            'Amount'
         ].sum()
+        allowed = y.upBound
         prop_checks.append({
             'Category': cat,
             'Treatment': trt,
-            'Allowed_%': prop*100,
-            'Allocated': alloc,
-            'TotalCat': total_cat,
-            'Used_%': (alloc/total_cat*100) if total_cat>0 else 0
+            'Allowed': allowed,
+            'Allocated': alloc
         })
     prop_df = pd.DataFrame(prop_checks)
 
-    return result_df, prop_df, result_df['Total_Emission'].sum(), result_df['Total_Cost'].sum(), status
+    return result_df, prop_df, status
 
 def main():
     st.title("Waste Treatment Optimization")
-    st.markdown("Upload Excel with Waste_Item, Category, (opt) Quantity.")
+    st.markdown("Upload Excel with Waste_Item, Category, (optional) Quantity.")
 
     uploaded   = st.file_uploader("Choose file", type=["xlsx","xls"])
-    max_budget = st.number_input("Budget (Rp)", min_value=0.0, step=1000.0)
+    max_budget = st.number_input("Budget (Rp)", step=1000.0)
 
     st.subheader("Origin Coordinates")
-    origin_lat = st.number_input("Latitude", value=float(data.locations_df['Latitude'].mean()))
-    origin_lon = st.number_input("Longitude", value=float(data.locations_df['Longitude'].mean()))
-    origin = (origin_lat, origin_lon)
+    lat = st.number_input("Latitude", value=float(data.locations_df['Latitude'].mean()))
+    lon = st.number_input("Longitude",value=float(data.locations_df['Longitude'].mean()))
+    origin = (lat, lon)
 
     if uploaded and max_budget>0:
         df_in = pd.read_excel(uploaded, engine="openpyxl")
         if st.button("Optimize"):
             with st.spinner("Running..."):
-                res, prop_df, tot_em, tot_ct, status = optimize_waste(df_in, max_budget, origin)
+                res, prop_df, status = optimize_waste(df_in, max_budget, origin)
             st.markdown(f"**Status:** {status}")
-            st.markdown(f"**Total Emission:** {tot_em:.2f} kgCO₂ — **Total Cost:** Rp {tot_ct:,.2f}")
-            st.subheader("Allocation Results")
+            st.subheader("Allocation")
             st.dataframe(res)
-            st.subheader("Proportion Check (Allocated vs Allowed)")
+            st.subheader("Proporsi Check (y vs x)")
             st.dataframe(prop_df)
-            st.download_button("Download Results CSV", res.to_csv(index=False), "res.csv")
-            st.download_button("Download Prop Checks CSV", prop_df.to_csv(index=False), "prop_checks.csv")
 
 if __name__=="__main__":
     main()
