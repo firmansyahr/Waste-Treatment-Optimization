@@ -151,7 +151,14 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
 
 def main():
     st.title("Waste Treatment Optimization")
-    st.markdown("[Download Template](https://docs.google.com/spreadsheets/d/1_w-_bBK6BpI3i-WM6L8ZlSZphyOCx3yco_TBh1cCnH0/edit?usp=sharing)")
+    st.markdown(
+        "This application optimizes the allocation of waste to various treatment "
+        "facilities in order to minimize total CO₂ emissions and cost"
+    )
+    st.markdown(
+        "[Download Input Template](https://docs.google.com/spreadsheets/"
+        "d/1_w-_bBK6BpI3i-WM6L8ZlSZphyOCx3yco_TBh1cCnH0/edit?usp=sharing)"
+    )
     uploaded = st.file_uploader("Choose Excel...", type=["xlsx","xls"])
     max_budget = st.number_input("Max Budget (Rp)", min_value=0.0, step=1000.0)
     st.subheader("Origin Coordinates")
