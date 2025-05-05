@@ -139,6 +139,7 @@ def optimize_waste(user_df: pd.DataFrame, max_budget: float, origin_coords: tupl
                 'Category': cat,
                 'Treatment': tr,
                 'TPA_Name': tpa,
+                'Distance_km': round(dist,2),
                 'Amount_kg': round(amt_kg, 3),
                 'Total_Emission_kgCO2': round(amt_kg * (props['em_fac'] + best['Emission_per_kg'] * dist), 3),
                 'Total_Cost_Rp': round(amt_kg * (props['tr_cost'] + best['Cost_per_kg'] * dist), 2)
